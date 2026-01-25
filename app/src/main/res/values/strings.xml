@@ -1,0 +1,24 @@
+<resources>
+    <string name="app_name">Ollama Chat</string>
+    <string name="settings">Settings</string>
+    <string name="send">Send</string>
+    <string name="back">Back</string>
+    <string name="api_mode">API 模式</string>
+    <string name="ollama">Ollama</string>
+    <string name="openai_compatible">OpenAI API 兼容</string>
+    <string name="api_key">API 密钥</string>
+    <string name="show_password">Show password</string>
+    <string name="hide_password">Hide password</string>
+    <string name="api_host">API 主机</string>
+    <string name="api_path">API 路径</string>
+    <string name="model">模型</string>
+    <string name="save">保存</string>
+    <string name="type_a_message">Type a message...</string>
+    <string name="add_image">Add an image</string>
+    <string name="add_file">Add a file</string>
+    <string name="profile">Profile</string>
+    <string name="add_profile">Add Profile</string>
+    <string name="delete_profile">Delete Profile</string>
+    <string name="save_profile">Save Profile</string>
+    <string name="profile_name">Profile Name</string>
+</resources>
