@@ -1,10 +1,13 @@
 package com.example.ollama
 
 import android.app.Application
+import android.database.Cursor
 import android.graphics.Bitmap
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
+import android.os.Environment
 import android.os.ParcelFileDescriptor
+import android.provider.OpenableColumns
 import android.util.Base64
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
@@ -28,6 +31,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import java.io.File
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
@@ -68,6 +72,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _logContent = MutableStateFlow("")
     val logContent: StateFlow<String> = _logContent.asStateFlow()
 
+    private val _savePdfTextToFile = MutableStateFlow(false)
+    val savePdfTextToFile: StateFlow<Boolean> = _savePdfTextToFile.asStateFlow()
+
     val profiles: StateFlow<List<OllamaProfile>> = settingsManager.getProfilesFlow()
     val activeProfile: StateFlow<OllamaProfile?> = settingsManager.getActiveProfileFlow()
 
@@ -80,6 +87,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         loadConversations()
         createOllamaService()
+        _savePdfTextToFile.value = settingsManager.getSavePdfTextToFile()
     }
 
     private fun createOllamaService() {
@@ -123,6 +131,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         ollamaApi = retrofit.create(OllamaApiService::class.java)
         ollamaApiPs = psRetrofit.create(OllamaApiService::class.java)
+    }
+
+    fun setSavePdfTextToFile(save: Boolean) {
+        settingsManager.setSavePdfTextToFile(save)
+        _savePdfTextToFile.value = save
     }
 
     fun addProfile(profile: OllamaProfile) {
@@ -208,7 +221,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _selectedFileUri.value = uri
             val mimeType = getApplication<Application>().contentResolver.getType(uri)
             if (mimeType == "application/pdf") {
-                _extractedFileText.value = readPdfContent(uri) ?: ""
+                val text = readPdfContent(uri)
+                if (settingsManager.getSavePdfTextToFile()) {
+                    text?.let { saveTextToFile(it, uri) }
+                    _extractedFileText.value = ""
+                } else {
+                    _extractedFileText.value = text ?: ""
+                }
             }
         }
     }
@@ -287,6 +306,40 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 logFile.appendText("${getCurrentTimestamp()} - Error reading PDF content: ${e.message}\n")
                 null
             }
+        }
+    }
+
+    private fun getFileName(uri: Uri): String {
+        var fileName = "unknown_file"
+        val cursor: Cursor? = getApplication<Application>().contentResolver.query(uri, null, null, null, null)
+        cursor?.use {
+            if (it.moveToFirst()) {
+                val nameIndex = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (nameIndex != -1) {
+                    fileName = it.getString(nameIndex)
+                }
+            }
+        }
+        return fileName
+    }
+
+    private fun saveTextToFile(text: String, uri: Uri) {
+        val originalFileName = getFileName(uri)
+        val textFileName = originalFileName.substringBeforeLast('.') + ".txt"
+
+        val directory = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "ollama")
+        if (!directory.exists()) {
+            directory.mkdirs()
+        }
+
+        val file = File(directory, textFileName)
+        try {
+            FileOutputStream(file).use { fos ->
+                fos.write(text.toByteArray())
+            }
+            Log.i("MainViewModel", "Text saved to ${file.absolutePath}")
+        } catch (e: Exception) {
+            Log.e("MainViewModel", "Error saving text to file", e)
         }
     }
 

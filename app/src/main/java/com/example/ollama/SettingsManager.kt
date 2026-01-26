@@ -27,6 +27,7 @@ class SettingsManager(context: Context) {
         const val KEY_PROFILES = "profiles"
         const val KEY_ACTIVE_PROFILE_NAME = "active_profile_name"
         const val KEY_CONVERSATIONS = "conversations"
+        const val KEY_SAVE_PDF_TEXT_TO_FILE = "save_pdf_text_to_file"
 
         val defaultProfile = OllamaProfile(
             name = "Default",
@@ -130,5 +131,13 @@ class SettingsManager(context: Context) {
 
     fun getConversations(): String {
         return prefs.getString(KEY_CONVERSATIONS, "") ?: ""
+    }
+
+    fun setSavePdfTextToFile(save: Boolean) {
+        prefs.edit().putBoolean(KEY_SAVE_PDF_TEXT_TO_FILE, save).apply()
+    }
+
+    fun getSavePdfTextToFile(): Boolean {
+        return prefs.getBoolean(KEY_SAVE_PDF_TEXT_TO_FILE, false)
     }
 }

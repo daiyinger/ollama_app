@@ -19,7 +19,7 @@
         android:theme="@style/Theme.Ollama">
         <meta-data
             android:name="com.google.mlkit.vision.DEPENDENCIES"
-            android:value="ocr_chinese" />
+            android:value="ocr,ocr_chinese" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

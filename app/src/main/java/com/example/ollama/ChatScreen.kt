@@ -41,6 +41,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -87,6 +88,7 @@ fun ChatScreen(
     val conversation = viewModel.conversations.collectAsState().value.find { it.id == conversationId }
     val profiles by viewModel.profiles.collectAsState()
     val activeProfile by viewModel.activeProfile.collectAsState()
+    val savePdfTextToFile by viewModel.savePdfTextToFile.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -173,7 +175,9 @@ fun ChatScreen(
                 activeProfile = activeProfile,
                 onProfileSelected = { profile ->
                     viewModel.setActiveProfile(profile.name)
-                }
+                },
+                savePdfTextToFile = savePdfTextToFile,
+                onSavePdfTextToFileChange = { viewModel.setSavePdfTextToFile(it) }
             )
         }
     ) { innerPadding ->
@@ -325,7 +329,9 @@ fun ChatInputBar(
     onSendClick: () -> Unit,
     profiles: List<OllamaProfile>,
     activeProfile: OllamaProfile?,
-    onProfileSelected: (OllamaProfile) -> Unit
+    onProfileSelected: (OllamaProfile) -> Unit,
+    savePdfTextToFile: Boolean,
+    onSavePdfTextToFileChange: (Boolean) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -386,10 +392,12 @@ fun ChatInputBar(
                     )
                 }
             }
-            Box(
+            Row(
                 modifier = Modifier
-                    .align(Alignment.CenterHorizontally)
-                    .padding(bottom = 8.dp)
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
                     modifier = Modifier
@@ -425,6 +433,14 @@ fun ChatInputBar(
                             }
                         )
                     }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Save PDF to file")
+                    Switch(
+                        checked = savePdfTextToFile,
+                        onCheckedChange = onSavePdfTextToFileChange,
+                        modifier = Modifier.padding(start = 8.dp)
+                    )
                 }
             }
         }
