@@ -16,6 +16,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -34,7 +35,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -185,13 +189,32 @@ fun EnlargedImageDialog(imageUri: Uri, onDismiss: () -> Unit) {
     val coroutineScope = rememberCoroutineScope()
 
     Dialog(onDismissRequest = onDismiss) {
-        Box(modifier = Modifier.fillMaxSize()) {
+        var scale by remember { mutableStateOf(1f) }
+        var offset by remember { mutableStateOf(Offset.Zero) }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    detectTransformGestures { _, pan, zoom, _ ->
+                        scale = (scale * zoom).coerceIn(1f, 5f)
+                        offset += pan
+                        if (scale == 1f) {
+                            offset = Offset.Zero
+                        }
+                    }
+                }
+        ) {
             AsyncImage(
                 model = imageUri,
                 contentDescription = "Enlarged image",
                 modifier = Modifier
                     .fillMaxSize()
-                    .clickable(onClick = onDismiss),
+                    .graphicsLayer(
+                        scaleX = scale,
+                        scaleY = scale,
+                        translationX = offset.x,
+                        translationY = offset.y
+                    ),
                 contentScale = ContentScale.Fit
             )
             Button(
