@@ -36,6 +36,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -384,10 +385,22 @@ fun ChatInputBar(
                     onDismissRequest = { expanded = false }
                 ) {
                     profiles.forEach { profile ->
-                        DropdownMenuItem(text = { Text(profile.name) }, onClick = {
-                            onProfileSelected(profile)
-                            expanded = false
-                        })
+                        DropdownMenuItem(
+                            text = { Text(profile.name) },
+                            onClick = {
+                                onProfileSelected(profile)
+                                expanded = false
+                            },
+                            leadingIcon = {
+                                RadioButton(
+                                    selected = profile.name == activeProfile?.name,
+                                    onClick = {
+                                        onProfileSelected(profile)
+                                        expanded = false
+                                    }
+                                )
+                            }
+                        )
                     }
                 }
             }
