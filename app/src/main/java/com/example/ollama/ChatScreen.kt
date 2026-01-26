@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -84,6 +86,7 @@ fun ChatScreen(
     val conversation = viewModel.conversations.collectAsState().value.find { it.id == conversationId }
     val profiles by viewModel.profiles.collectAsState()
     val activeProfile by viewModel.activeProfile.collectAsState()
+    val coroutineScope = rememberCoroutineScope()
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent(),
@@ -98,9 +101,11 @@ fun ChatScreen(
         }
     }
 
-    LaunchedEffect(messages) {
+    LaunchedEffect(messages.size, messages.lastOrNull()?.content) {
         if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.lastIndex)
+            coroutineScope.launch {
+                listState.scrollToItem(0)
+            }
         }
     }
 
@@ -162,18 +167,72 @@ fun ChatScreen(
             )
         }
     ) { innerPadding ->
+        val reversedMessages = messages.reversed()
         LazyColumn(
             state = listState,
+            reverseLayout = true,
+            verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.Top),
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(horizontal = 8.dp)
         ) {
-            items(messages) { message ->
+            items(reversedMessages) { message ->
                 MessageBubble(message = message)
             }
         }
+    }
+}
+
+@Composable
+fun CodeBlock(codeText: String) {
+    val coroutineScope = rememberCoroutineScope()
+    val clipboardManager = LocalClipboardManager.current
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = Color(0xFF2E2E2E), // A dark background
+                shape = RoundedCornerShape(8.dp)
+            )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Code",
+                color = Color.LightGray,
+                style = MaterialTheme.typography.labelSmall
+            )
+            IconButton(onClick = {
+                coroutineScope.launch {
+                    clipboardManager.setText(AnnotatedString(codeText))
+                }
+            }) {
+                Icon(
+                    Icons.Default.ContentCopy,
+                    contentDescription = "Copy code",
+                    tint = Color.LightGray
+                )
+            }
+        }
+        val scrollState = rememberScrollState()
+        Text(
+            text = codeText,
+            modifier = Modifier
+                .padding(
+                    start = 8.dp,
+                    end = 8.dp,
+                    bottom = 8.dp
+                )
+                .horizontalScroll(scrollState),
+            fontFamily = FontFamily.Monospace,
+            color = Color.White
+        )
     }
 }
 
@@ -187,18 +246,15 @@ fun MessageBubble(message: ChatMessage) {
     } else {
         MaterialTheme.colorScheme.secondaryContainer
     }
-    val clipboardManager = LocalClipboardManager.current
-    val coroutineScope = rememberCoroutineScope()
 
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = arrangement
+        horizontalArrangement = arrangement,
+        verticalAlignment = Alignment.Bottom
     ) {
         Surface(
             shape = RoundedCornerShape(16.dp),
-            color = backgroundColor,
-            modifier = Modifier
-                .padding(vertical = 4.dp)
+            color = backgroundColor
         ) {
             SelectionContainer {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -225,50 +281,7 @@ fun MessageBubble(message: ChatMessage) {
                             parts.forEachIndexed { index, part ->
                                 if (part.isNotBlank()) {
                                     if (index % 2 == 1) { // Code block
-                                        val codeText = part.trim()
-                                        Column(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .background(
-                                                    color = Color(0xFF2E2E2E), // A dark background
-                                                    shape = RoundedCornerShape(8.dp)
-                                                )
-                                        ) {
-                                            Row(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Text(
-                                                    text = "Code",
-                                                    color = Color.LightGray,
-                                                    style = MaterialTheme.typography.labelSmall
-                                                )
-                                                IconButton(onClick = {
-                                                    coroutineScope.launch {
-                                                        clipboardManager.setText(AnnotatedString(codeText))
-                                                    }
-                                                }) {
-                                                    Icon(
-                                                        Icons.Default.ContentCopy,
-                                                        contentDescription = "Copy code",
-                                                        tint = Color.LightGray
-                                                    )
-                                                }
-                                            }
-                                            Text(
-                                                text = codeText,
-                                                modifier = Modifier.padding(
-                                                    start = 8.dp,
-                                                    end = 8.dp,
-                                                    bottom = 8.dp
-                                                ),
-                                                fontFamily = FontFamily.Monospace,
-                                                color = Color.White
-                                            )
-                                        }
+                                        CodeBlock(codeText = part.trim())
                                     } else { // Normal text
                                         Text(
                                             text = part.trim(),
