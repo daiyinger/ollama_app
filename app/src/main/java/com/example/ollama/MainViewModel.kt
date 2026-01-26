@@ -8,11 +8,13 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import okhttp3.Interceptor
@@ -203,7 +205,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val bytes = inputStream.readBytes()
                 Base64.encodeToString(bytes, Base64.NO_WRAP)
             }
-        } catch (e: Exception) {
+        } catch (e: Exception)
+        {
             Log.e("MainViewModel", "Error converting file to Base64", e)
             null
         }
@@ -221,23 +224,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val fileUri = _selectedFileUri.value
         _selectedFileUri.value = null
 
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             val fileBase64 = fileUri?.let { fileToBase64(it) }
 
             try {
                 val profile = activeProfile.value ?: return@launch
                 val url = profile.apiHost.removeSuffix("/") + "/" + profile.apiPath.removePrefix("/")
-                _connectionStatus.value = "Connecting..."
+                withContext(Dispatchers.Main) {
+                    _connectionStatus.value = "Connecting..."
+                }
 
                 when (profile.apiMode) {
                     "Ollama" -> {
                         val request = OllamaRequest(model = profile.model, prompt = prompt, stream = true, images = fileBase64?.let { listOf(it) })
                         val responseBody = ollamaApi.generateOllamaStream(url = url, request = request)
-                        _connectionStatus.value = ""
+                        withContext(Dispatchers.Main) {
+                            _connectionStatus.value = ""
+                        }
                         val responseStream = responseBody.byteStream().bufferedReader()
 
                         var ollamaMessage = ChatMessage(sender = "Ollama", content = "")
-                        addMessageToConversation(conversationId, ollamaMessage)
+                        withContext(Dispatchers.Main) {
+                            addMessageToConversation(conversationId, ollamaMessage)
+                        }
 
                         var firstChunk = true
                         responseStream.use {
@@ -247,25 +256,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 if (line == null) break
 
                                 if (firstChunk) {
-                                    _inferenceStatus.value = "Inferencing..."
+                                    withContext(Dispatchers.Main) {
+                                        _inferenceStatus.value = "Inferencing..."
+                                    }
                                     firstChunk = false
                                 }
 
                                 try {
                                     val ollamaResponse = json.decodeFromString<OllamaResponse>(line)
                                     ollamaMessage = ollamaMessage.copy(content = ollamaMessage.content + ollamaResponse.response)
-                                    updateLastMessageInConversation(conversationId, ollamaMessage)
+                                    withContext(Dispatchers.Main) {
+                                        updateLastMessageInConversation(conversationId, ollamaMessage)
+                                    }
 
                                     if (ollamaResponse.done == true) {
                                         val performance = formatOllamaPerformance(ollamaResponse)
                                         ollamaMessage = ollamaMessage.copy(performance = performance)
-                                        updateLastMessageInConversation(conversationId, ollamaMessage)
-                                        _inferenceStatus.value = "Done"
+                                        withContext(Dispatchers.Main) {
+                                            updateLastMessageInConversation(conversationId, ollamaMessage)
+                                            _inferenceStatus.value = "Done"
+                                        }
                                         break
                                     }
                                 } catch (e: Exception) {
                                     Log.e("MainViewModel", "Error parsing JSON line: $line", e)
-                                    _inferenceStatus.value = "Error"
+                                    withContext(Dispatchers.Main) {
+                                        _inferenceStatus.value = "Error"
+                                    }
                                 }
                             }
                         }
@@ -291,26 +308,62 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             content.add(OpenAIImageContent(image_url = OpenAIImageUrl(url = imageUrl)))
                         }
                         val messages = previousMessages + listOf(OpenAIRequestMessage(role = "user", content = content))
-                        val request = OpenAIRequest(model = profile.model, messages = messages)
-                        
-                        _connectionStatus.value = ""
-                        _inferenceStatus.value = "Inferencing..."
-                        
-                        val response = ollamaApi.generateOpenAI(url = url, request = request)
-                        _inferenceStatus.value = "Done"
+                        val request = OpenAIRequest(model = profile.model, messages = messages, stream = true)
+                        val responseBody = ollamaApi.generateOpenAIStream(url = url, request = request)
+                        withContext(Dispatchers.Main) {
+                            _connectionStatus.value = ""
+                        }
+                        val responseStream = responseBody.byteStream().bufferedReader()
 
-                        val performance = formatOpenAIPerformance(response)
-                        val responseText = response.choices.firstOrNull()?.message?.content ?: ""
-                        val responseMessage = ChatMessage(
-                            sender = "Ollama",
-                            content = responseText,
-                            performance = performance
-                        )
-                        addMessageToConversation(conversationId, responseMessage)
+                        var ollamaMessage = ChatMessage(sender = "Ollama", content = "")
+                        withContext(Dispatchers.Main) {
+                            addMessageToConversation(conversationId, ollamaMessage)
+                        }
+
+                        var firstChunk = true
+                        responseStream.use {
+                            var line: String?
+                            while (true) {
+                                line = it.readLine()
+                                if (line == null) break
+                                if (!line.startsWith("data:")) continue
+
+                                if (firstChunk) {
+                                    withContext(Dispatchers.Main) {
+                                        _inferenceStatus.value = "Inferencing..."
+                                    }
+                                    firstChunk = false
+                                }
+
+                                val data = line.substringAfter("data: ").trim()
+                                if (data == "[DONE]") {
+                                    withContext(Dispatchers.Main) {
+                                        _inferenceStatus.value = "Done"
+                                    }
+                                    break
+                                }
+
+                                try {
+                                    val openAIResponse = json.decodeFromString<OpenAIStreamResponse>(data)
+                                    val delta = openAIResponse.choices.firstOrNull()?.delta?.content ?: ""
+                                    ollamaMessage = ollamaMessage.copy(content = ollamaMessage.content + delta)
+                                    withContext(Dispatchers.Main) {
+                                        updateLastMessageInConversation(conversationId, ollamaMessage)
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e("MainViewModel", "Error parsing JSON line: $line", e)
+                                    withContext(Dispatchers.Main) {
+                                        _inferenceStatus.value = "Error"
+                                    }
+                                }
+                            }
+                        }
                     }
                     else -> {
-                        addMessageToConversation(conversationId, ChatMessage(sender = "Error", content = "Unsupported API mode"))
-                        _connectionStatus.value = "Error"
+                        withContext(Dispatchers.Main) {
+                            addMessageToConversation(conversationId, ChatMessage(sender = "Error", content = "Unsupported API mode"))
+                            _connectionStatus.value = "Error"
+                        }
                     }
                 }
                 // Auto-generate title for new conversations
@@ -320,14 +373,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
             } catch (e: Exception) {
-                addMessageToConversation(conversationId, ChatMessage(sender = "Error", content = e.message ?: "Unknown error"))
+                withContext(Dispatchers.Main) {
+                    addMessageToConversation(
+                        conversationId,
+                        ChatMessage(sender = "Error", content = e.message ?: "Unknown error")
+                    )
+                }
                 Log.e("MainViewModel", "Error sending message", e)
-                _connectionStatus.value = "Error: Connection failed"
-            }
-            finally {
+                withContext(Dispatchers.Main) {
+                    _connectionStatus.value = "Error: Connection failed"
+                }
+            } finally {
                 delay(2000)
-                _connectionStatus.value = ""
-                _inferenceStatus.value = ""
+                withContext(Dispatchers.Main) {
+                    _connectionStatus.value = ""
+                    _inferenceStatus.value = ""
+                }
             }
         }
     }
@@ -366,7 +427,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun generateConversationTitle(conversationId: String) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             val conversation = _conversations.value.find { it.id == conversationId } ?: return@launch
             val userPrompt = conversation.messages.firstOrNull()?.content ?: return@launch
 
@@ -379,14 +440,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     "Ollama" -> {
                         val request = OllamaRequest(model = profile.model, prompt = titlePrompt, stream = false)
                         val response = ollamaApi.generateOllama(url = url, request = request)
-                        updateConversationTitle(conversationId, response.response.trim().replace("\"", ""))
+                        withContext(Dispatchers.Main) {
+                            updateConversationTitle(conversationId, response.response.trim().replace("\"", ""))
+                        }
                     }
                     "OpenAI API 兼容" -> {
                         val messages = listOf(OpenAIRequestMessage(role = "user", content = listOf(OpenAITextContent(text = titlePrompt))))
                         val request = OpenAIRequest(model = profile.model, messages = messages)
                         val response = ollamaApi.generateOpenAI(url = url, request = request)
                         val title = response.choices.firstOrNull()?.message?.content?.trim()?.replace("\"", "") ?: "Untitled"
-                        updateConversationTitle(conversationId, title)
+                        withContext(Dispatchers.Main) {
+                            updateConversationTitle(conversationId, title)
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -396,9 +461,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun fetchRunningModels() {
-        viewModelScope.launch {
-            _runningModels.value = emptyList()
-            _runningModelsError.value = "Loading..."
+        viewModelScope.launch(Dispatchers.IO) {
+            withContext(Dispatchers.Main) {
+                _runningModels.value = emptyList()
+                _runningModelsError.value = "Loading..."
+            }
             try {
                 val profile = activeProfile.value ?: return@launch
                 val psPath = profile.psPath
@@ -412,12 +479,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 logFile.appendText("${getCurrentTimestamp()} - Request: GET $url\n")
                 val response = ollamaApiPs.getRunningModels(url = url)
                 logFile.appendText("${getCurrentTimestamp()} - Response: ${json.encodeToString(response)}\n")
-                _runningModels.value = response.models
-                _runningModelsError.value = null
+                withContext(Dispatchers.Main) {
+                    _runningModels.value = response.models
+                    _runningModelsError.value = null
+                }
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Error fetching running models", e)
                 val errorMessage = e.message ?: "Unknown error fetching running models"
-                _runningModelsError.value = errorMessage
+                withContext(Dispatchers.Main) {
+                    _runningModelsError.value = errorMessage
+                }
                 val logDir = getApplication<Application>().filesDir
                 val logFile = File(logDir, "ollama_log.txt")
                 logFile.appendText("${getCurrentTimestamp()} - Error fetching running models: $errorMessage\n")
@@ -430,36 +501,49 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun readLogFile() {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 val logDir = getApplication<Application>().filesDir
                 val logFile = File(logDir, "ollama_log.txt")
                 if (logFile.exists()) {
-                    _logContent.value = logFile.readText()
+                    val content = logFile.readText()
+                    withContext(Dispatchers.Main) {
+                        _logContent.value = content
+                    }
                 } else {
-                    _logContent.value = "Log file not found."
+                    withContext(Dispatchers.Main) {
+                        _logContent.value = "Log file not found."
+                    }
                 }
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Error reading log file", e)
-                _logContent.value = "Error reading log file: ${e.message}"
+                withContext(Dispatchers.Main) {
+                    _logContent.value = "Error reading log file: ${e.message}"
+                }
             }
         }
     }
 
     fun clearLogFile() {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 val logDir = getApplication<Application>().filesDir
                 val logFile = File(logDir, "ollama_log.txt")
                 if (logFile.exists()) {
                     logFile.writeText("")
-                    _logContent.value = ""
+                    withContext(Dispatchers.Main) {
+                        _logContent.value = ""
+                    }
                 } else {
-                    _logContent.value = "Log file not found."
+                    withContext(Dispatchers.Main) {
+                        _logContent.value = "Log file not found."
+                    }
                 }
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Error clearing log file", e)
-                _logContent.value = "Error clearing log file: ${e.message}"
+                withContext(Dispatchers.Main) {
+                    _logContent.value = "Error clearing log file: ${e.message}"
+                }
             }
         }
     }

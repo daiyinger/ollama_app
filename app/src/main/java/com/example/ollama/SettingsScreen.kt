@@ -302,7 +302,7 @@ fun SettingsScreen(
                 TextField(
                     value = psPath,
                     onValueChange = { psPath = it },
-                    label = { Text("PS CMD") },
+                    label = { Text("PS Path") },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }

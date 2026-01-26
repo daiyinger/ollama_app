@@ -87,6 +87,24 @@ data class OpenAIUsage(val prompt_tokens: Int, val completion_tokens: Int, val t
 @Serializable
 data class OpenAIResponse(val choices: List<OpenAIChoice>, val usage: OpenAIUsage? = null)
 
+// -- Streaming Response --
+@Serializable
+data class OpenAIStreamChoice(
+    val delta: OpenAIStreamDelta,
+    val finish_reason: String? = null
+)
+
+@Serializable
+data class OpenAIStreamDelta(
+    val content: String? = null
+)
+
+@Serializable
+data class OpenAIStreamResponse(
+    val choices: List<OpenAIStreamChoice>
+)
+
+
 /** Response from the ps API */
 @Serializable
 data class OllamaPsResponse(
@@ -132,6 +150,11 @@ interface OllamaApiService {
     @POST
     @Streaming
     suspend fun generateOllamaStream(@Url url: String, @Body request: OllamaRequest): ResponseBody
+
+    /** Call the OpenAI compatible endpoint for streaming */
+    @POST
+    @Streaming
+    suspend fun generateOpenAIStream(@Url url: String, @Body request: OpenAIRequest): ResponseBody
 
     /** Get running models */
     @GET
