@@ -55,10 +55,7 @@ class MainActivity : ComponentActivity() {
                             SettingsScreen(
                                 viewModel = viewModel,
                                 onNavigateBack = { navController.popBackStack() },
-                                onNavigateToLog = {
-                                    viewModel.readLogFile()
-                                    navController.navigate("logViewer")
-                                },
+                                onNavigateToLog = { navController.navigate("logViewer") },
                                 modifier = Modifier.fillMaxSize()
                             )
                         }

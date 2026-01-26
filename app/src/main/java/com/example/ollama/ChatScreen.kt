@@ -1,7 +1,10 @@
 package com.example.ollama
 
 import android.app.Application
+import android.content.Context
+import android.database.Cursor
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -88,7 +91,6 @@ fun ChatScreen(
     val conversation = viewModel.conversations.collectAsState().value.find { it.id == conversationId }
     val profiles by viewModel.profiles.collectAsState()
     val activeProfile by viewModel.activeProfile.collectAsState()
-    val savePdfTextToFile by viewModel.savePdfTextToFile.collectAsState()
     val coroutineScope = rememberCoroutineScope()
 
     val filePickerLauncher = rememberLauncherForActivityResult(
@@ -175,9 +177,7 @@ fun ChatScreen(
                 activeProfile = activeProfile,
                 onProfileSelected = { profile ->
                     viewModel.setActiveProfile(profile.name)
-                },
-                savePdfTextToFile = savePdfTextToFile,
-                onSavePdfTextToFileChange = { viewModel.setSavePdfTextToFile(it) }
+                }
             )
         }
     ) { innerPadding ->
@@ -329,11 +329,10 @@ fun ChatInputBar(
     onSendClick: () -> Unit,
     profiles: List<OllamaProfile>,
     activeProfile: OllamaProfile?,
-    onProfileSelected: (OllamaProfile) -> Unit,
-    savePdfTextToFile: Boolean,
-    onSavePdfTextToFileChange: (Boolean) -> Unit
+    onProfileSelected: (OllamaProfile) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -342,14 +341,22 @@ fun ChatInputBar(
         Column {
             selectedFileUri?.let {
                 Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp)) {
-                    AsyncImage(
-                        model = it,
-                        contentDescription = "Selected file thumbnail",
-                        modifier = Modifier
-                            .size(64.dp)
-                            .clip(RoundedCornerShape(8.dp)),
-                        contentScale = ContentScale.Crop
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        AsyncImage(
+                            model = it,
+                            contentDescription = "Selected file thumbnail",
+                            modifier = Modifier
+                                .size(64.dp)
+                                .clip(RoundedCornerShape(8.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+                        Spacer(modifier = Modifier.size(8.dp))
+                        Text(
+                            text = getFileName(context, it),
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 2
+                        )
+                    }
                     Icon(
                         imageVector = Icons.Default.Clear,
                         contentDescription = "Clear selected file",
@@ -396,7 +403,7 @@ fun ChatInputBar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
@@ -434,19 +441,24 @@ fun ChatInputBar(
                         )
                     }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Save PDF to file")
-                    Switch(
-                        checked = savePdfTextToFile,
-                        onCheckedChange = onSavePdfTextToFileChange,
-                        modifier = Modifier.padding(start = 8.dp)
-                    )
-                }
             }
         }
     }
 }
 
+fun getFileName(context: Context, uri: Uri): String {
+    var fileName = "unknown_file"
+    val cursor: Cursor? = context.contentResolver.query(uri, null, null, null, null)
+    cursor?.use {
+        if (it.moveToFirst()) {
+            val nameIndex = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (nameIndex != -1) {
+                fileName = it.getString(nameIndex)
+            }
+        }
+    }
+    return fileName
+}
 
 @Preview(showBackground = true)
 @Composable

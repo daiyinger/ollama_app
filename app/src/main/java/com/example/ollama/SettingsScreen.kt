@@ -2,12 +2,18 @@ package com.example.ollama
 
 import android.app.Application
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -28,25 +34,37 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.example.ollama.ui.theme.OllamaTheme
+import java.io.File
+import java.text.CharacterIterator
+import java.text.StringCharacterIterator
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -58,6 +76,9 @@ fun SettingsScreen(
 ) {
     val profiles by viewModel.profiles.collectAsState()
     val activeProfile by viewModel.activeProfile.collectAsState()
+    val savePdfTextToFile by viewModel.savePdfTextToFile.collectAsState()
+    val logFiles by viewModel.logFiles.collectAsState()
+    var showLogFilesDialog by remember { mutableStateOf(false) }
 
     var selectedProfile by remember(activeProfile) { mutableStateOf(activeProfile ?: SettingsManager.defaultProfile) }
     var name by remember(selectedProfile) { mutableStateOf(selectedProfile.name) }
@@ -154,6 +175,77 @@ fun SettingsScreen(
         )
     }
 
+    if (showLogFilesDialog) {
+        Dialog(
+            onDismissRequest = { showLogFilesDialog = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+                LazyColumn {
+                    items(logFiles, key = { it.file.absolutePath }) { logFileInfo ->
+                        val dismissState = rememberSwipeToDismissBoxState(
+                            confirmValueChange = {
+                                if (it == SwipeToDismissBoxValue.EndToStart) {
+                                    viewModel.deleteLogFile(logFileInfo.file)
+                                    return@rememberSwipeToDismissBoxState true
+                                }
+                                false
+                            }
+                        )
+                        SwipeToDismissBox(
+                            state = dismissState,
+                            enableDismissFromStartToEnd = false,
+                            backgroundContent = {
+                                val color = when (dismissState.targetValue) {
+                                    SwipeToDismissBoxValue.EndToStart -> Color.Red
+                                    else -> Color.Transparent
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(color)
+                                        .padding(horizontal = 20.dp),
+                                    contentAlignment = Alignment.CenterEnd
+                                ) {
+                                    if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart) {
+                                        Icon(
+                                            Icons.Default.Delete,
+                                            contentDescription = "Delete",
+                                            tint = Color.White
+                                        )
+                                    }
+                                }
+                            }
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        viewModel.readLogFile(logFileInfo.file)
+                                        showLogFilesDialog = false
+                                        onNavigateToLog()
+                                    }
+                                    .padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = logFileInfo.file.name,
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = humanReadableByteCountSI(logFileInfo.size),
+                                    modifier = Modifier.padding(start = 8.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     Scaffold(
         modifier = modifier,
         topBar = {
@@ -191,7 +283,7 @@ fun SettingsScreen(
                                     onValueChange = {},
                                     label = { Text(stringResource(R.string.profile)) },
                                     readOnly = true,
-                                    trailingIcon = { Icon(Icons.Filled.MoreVert, contentDescription = null)},
+                                    trailingIcon = { Icon(Icons.Filled.MoreVert, contentDescription = null) },
                                     modifier = Modifier.menuAnchor().fillMaxWidth()
                                 )
                                 ExposedDropdownMenu(expanded = isProfileSelectorExpended, onDismissRequest = { isProfileSelectorExpended = false }) {
@@ -199,7 +291,7 @@ fun SettingsScreen(
                                             profile ->
                                         DropdownMenuItem(
                                             text = { Text(profile.name) },
-                                            onClick = { 
+                                            onClick = {
                                                 selectedProfile = profile
                                                 viewModel.setActiveProfile(profile.name)
                                                 isProfileSelectorExpended = false
@@ -211,9 +303,9 @@ fun SettingsScreen(
                             IconButton(onClick = { /* TODO: Implement Add */ }) {
                                 Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.add_profile))
                             }
-                            IconButton(onClick = { 
+                            IconButton(onClick = {
                                 viewModel.deleteProfile(selectedProfile.name)
-                             }) {
+                            }) {
                                 Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.delete_profile))
                             }
                             IconButton(onClick = { saveModelSettings() }) {
@@ -232,7 +324,7 @@ fun SettingsScreen(
                                 onValueChange = {},
                                 label = { Text(stringResource(R.string.api_mode)) },
                                 readOnly = true,
-                                trailingIcon = { Icon(Icons.Filled.MoreVert, contentDescription = null)},
+                                trailingIcon = { Icon(Icons.Filled.MoreVert, contentDescription = null) },
                                 modifier = Modifier.menuAnchor().fillMaxWidth()
                             )
                             ExposedDropdownMenu(expanded = isApiModeExpanded, onDismissRequest = { isApiModeExpanded = false }) {
@@ -240,7 +332,7 @@ fun SettingsScreen(
                                     mode ->
                                     DropdownMenuItem(
                                         text = { Text(mode) },
-                                        onClick = { 
+                                        onClick = {
                                             apiMode = mode
                                             isApiModeExpanded = false
                                             // Auto-update API path for convenience
@@ -305,6 +397,14 @@ fun SettingsScreen(
                     label = { Text("PS Path") },
                     modifier = Modifier.fillMaxWidth(),
                 )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Save PDF to file")
+                    Switch(
+                        checked = savePdfTextToFile,
+                        onCheckedChange = { viewModel.setSavePdfTextToFile(it) },
+                        modifier = Modifier.padding(start = 8.dp)
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.padding(8.dp))
@@ -314,7 +414,10 @@ fun SettingsScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Button(
-                    onClick = { onNavigateToLog() },
+                    onClick = {
+                        viewModel.listLogFiles()
+                        showLogFilesDialog = true
+                    },
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("View Log")
@@ -328,6 +431,19 @@ fun SettingsScreen(
             }
         }
     }
+}
+
+fun humanReadableByteCountSI(bytes: Long): String {
+    var bytes = bytes
+    if (-1000 < bytes && bytes < 1000) {
+        return "$bytes B"
+    }
+    val ci: CharacterIterator = StringCharacterIterator("kMGTPE")
+    while (bytes <= -999950 || bytes >= 999950) {
+        bytes /= 1000
+        ci.next()
+    }
+    return String.format("%.1f %cB", bytes / 1000.0, ci.current())
 }
 
 @Preview(showBackground = true)

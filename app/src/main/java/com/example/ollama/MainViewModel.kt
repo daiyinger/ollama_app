@@ -39,6 +39,7 @@ import java.util.*
 import java.util.concurrent.TimeUnit
 
 data class RunningModelDisplayInfo(val name: String, val expirationTime: String)
+data class LogFileInfo(val file: File, val size: Long)
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -74,6 +75,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _savePdfTextToFile = MutableStateFlow(false)
     val savePdfTextToFile: StateFlow<Boolean> = _savePdfTextToFile.asStateFlow()
+
+    private val _logFiles = MutableStateFlow<List<LogFileInfo>>(emptyList())
+    val logFiles: StateFlow<List<LogFileInfo>> = _logFiles.asStateFlow()
 
     val profiles: StateFlow<List<OllamaProfile>> = settingsManager.getProfilesFlow()
     val activeProfile: StateFlow<OllamaProfile?> = settingsManager.getActiveProfileFlow()
@@ -222,7 +226,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val mimeType = getApplication<Application>().contentResolver.getType(uri)
             if (mimeType == "application/pdf") {
                 val text = readPdfContent(uri)
-                if (settingsManager.getSavePdfTextToFile()) {
+                if (_savePdfTextToFile.value) {
                     text?.let { saveTextToFile(it, uri) }
                     _extractedFileText.value = ""
                 } else {
@@ -662,6 +666,52 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _runningModelsError.value = null
     }
 
+    fun listLogFiles() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val internalLogDir = getApplication<Application>().filesDir
+            val internalLogFile = File(internalLogDir, "ollama_log.txt")
+
+            val externalLogDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "ollama")
+
+            val allLogFiles = mutableListOf<LogFileInfo>()
+            if (internalLogFile.exists()) {
+                allLogFiles.add(LogFileInfo(internalLogFile, internalLogFile.length()))
+            }
+
+            if (externalLogDir.exists() && externalLogDir.isDirectory) {
+                externalLogDir.listFiles { _, name -> name.endsWith(".txt") }?.let {
+                    files ->
+                    files.forEach {
+                        allLogFiles.add(LogFileInfo(it, it.length()))
+                    }
+                }
+            }
+            _logFiles.value = allLogFiles
+        }
+    }
+
+    fun readLogFile(file: File) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                if (file.exists()) {
+                    val content = file.readText()
+                    withContext(Dispatchers.Main) {
+                        _logContent.value = content
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        _logContent.value = "Log file not found."
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error reading log file", e)
+                withContext(Dispatchers.Main) {
+                    _logContent.value = "Error reading log file: ${e.message}"
+                }
+            }
+        }
+    }
+
     fun readLogFile() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -682,6 +732,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 withContext(Dispatchers.Main) {
                     _logContent.value = "Error reading log file: ${e.message}"
                 }
+            }
+        }
+    }
+
+    fun deleteLogFile(file: File) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                if (file.exists()) {
+                    file.delete()
+                    listLogFiles()
+                }
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error deleting log file", e)
             }
         }
     }
