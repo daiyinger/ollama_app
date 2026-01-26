@@ -118,7 +118,9 @@ data class OllamaPsModel(
     val size: Long,
     @SerialName("quantization_level")
     val quantizationLevel: String? = null,
-    val details: OllamaPsModelDetails
+    val details: OllamaPsModelDetails,
+    @SerialName("expires_at")
+    val expiresAt: String? = null
 )
 
 @Serializable

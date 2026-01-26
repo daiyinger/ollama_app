@@ -79,6 +79,7 @@ fun ChatScreen(
     var text by remember { mutableStateOf("") }
     val messages by viewModel.messages.collectAsState()
     val selectedFileUri by viewModel.selectedFileUri.collectAsState()
+    val extractedFileText by viewModel.extractedFileText.collectAsState()
     val listState = rememberLazyListState()
     val keyboardController = LocalSoftwareKeyboardController.current
     val connectionStatus by viewModel.connectionStatus.collectAsState()
@@ -98,6 +99,12 @@ fun ChatScreen(
     LaunchedEffect(conversationId) {
         conversationId?.let {
             viewModel.loadConversation(it)
+        }
+    }
+
+    LaunchedEffect(extractedFileText) {
+        if (extractedFileText.isNotBlank()) {
+            text = extractedFileText
         }
     }
 
@@ -150,7 +157,10 @@ fun ChatScreen(
                 text = text,
                 onTextChange = { text = it },
                 selectedFileUri = selectedFileUri,
-                onFileClear = { viewModel.clearSelectedFile() },
+                onFileClear = { 
+                    viewModel.clearSelectedFile()
+                    text = ""
+                },
                 onAddFileClick = { filePickerLauncher.launch("*/*") },
                 onSendClick = {
                     if (conversationId != null) {
