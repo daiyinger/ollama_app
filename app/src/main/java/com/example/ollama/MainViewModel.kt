@@ -1,8 +1,9 @@
 package com.example.ollama
 
 import android.app.Application
+import android.graphics.pdf.PdfRenderer
 import android.net.Uri
-import android.os.Environment
+import android.os.ParcelFileDescriptor
 import android.util.Base64
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
@@ -23,8 +24,7 @@ import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import java.io.File
 import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.util.*
 import java.util.concurrent.TimeUnit
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -212,21 +212,64 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun readFileContent(uri: Uri): String? {
+        return try {
+            getApplication<Application>().contentResolver.openInputStream(uri)?.use { inputStream ->
+                inputStream.bufferedReader().use { it.readText() }
+            }
+        } catch (e: Exception) {
+            Log.e("MainViewModel", "Error reading file content", e)
+            null
+        }
+    }
+
+    private fun readPdfContent(uri: Uri): String? {
+        return try {
+            val pfd = getApplication<Application>().contentResolver.openFileDescriptor(uri, "r")
+            pfd?.use {
+                val renderer = PdfRenderer(it)
+                val pageCount = renderer.pageCount
+                renderer.close()
+                "PDF with $pageCount pages. (Content extraction not yet implemented)"
+            }
+        } catch (e: Exception) {
+            Log.e("MainViewModel", "Error reading PDF content", e)
+            null
+        }
+    }
+
+
     fun sendMessage(prompt: String, conversationId: String) {
         if (prompt.isBlank() && _selectedFileUri.value == null) return
 
         val conversation = _conversations.value.find { it.id == conversationId }
         if (conversation == null) return
 
-        val userMessage = ChatMessage(sender = "You", content = prompt, fileUri = _selectedFileUri.value)
+        val fileUri = _selectedFileUri.value
+        var fileBase64: String? = null
+        var finalPrompt = prompt
+
+        fileUri?.let {
+            val mimeType = getApplication<Application>().contentResolver.getType(it)
+            if (mimeType == "application/pdf") {
+                readPdfContent(it)?.let { content ->
+                    finalPrompt = "$prompt\n\n--- PDF Content ---\n$content"
+                }
+            } else if (mimeType != null && mimeType.startsWith("text/")) {
+                readFileContent(it)?.let { content ->
+                    finalPrompt = "$prompt\n\n--- Document Content ---\n$content"
+                }
+            } else {
+                fileBase64 = fileToBase64(it)
+            }
+        }
+
+        val userMessage = ChatMessage(sender = "You", content = finalPrompt, fileUri = _selectedFileUri.value)
         addMessageToConversation(conversationId, userMessage)
 
-        val fileUri = _selectedFileUri.value
         _selectedFileUri.value = null
 
         viewModelScope.launch(Dispatchers.IO) {
-            val fileBase64 = fileUri?.let { fileToBase64(it) }
-
             try {
                 val profile = activeProfile.value ?: return@launch
                 val url = profile.apiHost.removeSuffix("/") + "/" + profile.apiPath.removePrefix("/")
@@ -236,7 +279,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 when (profile.apiMode) {
                     "Ollama" -> {
-                        val request = OllamaRequest(model = profile.model, prompt = prompt, stream = true, images = fileBase64?.let { listOf(it) })
+                        val request = OllamaRequest(model = profile.model, prompt = finalPrompt, stream = true, images = fileBase64?.let { listOf(it) })
                         val responseBody = ollamaApi.generateOllamaStream(url = url, request = request)
                         withContext(Dispatchers.Main) {
                             _connectionStatus.value = ""
@@ -302,7 +345,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         }
 
                         val content = mutableListOf<OpenAIContent>()
-                        content.add(OpenAITextContent(text = prompt))
+                        content.add(OpenAITextContent(text = finalPrompt))
                         fileBase64?.let {
                             val imageUrl = "data:image/jpeg;base64,$it"
                             content.add(OpenAIImageContent(image_url = OpenAIImageUrl(url = imageUrl)))
