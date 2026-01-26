@@ -12,9 +12,6 @@ import android.util.Base64
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -22,7 +19,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -30,8 +26,11 @@ import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FileNotFoundException
 import java.io.FileOutputStream
+import java.io.IOException
 import java.text.SimpleDateFormat
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
@@ -55,12 +54,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedFileUri = MutableStateFlow<Uri?>(null)
     val selectedFileUri: StateFlow<Uri?> = _selectedFileUri.asStateFlow()
 
-    private val _extractedFileText = MutableStateFlow("")
-    val extractedFileText: StateFlow<String> = _extractedFileText.asStateFlow()
-
-    private val _connectionStatus = MutableStateFlow("")
-    val connectionStatus: StateFlow<String> = _connectionStatus.asStateFlow()
-
     private val _inferenceStatus = MutableStateFlow("")
     val inferenceStatus: StateFlow<String> = _inferenceStatus.asStateFlow()
 
@@ -73,11 +66,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _logContent = MutableStateFlow("")
     val logContent: StateFlow<String> = _logContent.asStateFlow()
 
-    private val _savePdfTextToFile = MutableStateFlow(false)
-    val savePdfTextToFile: StateFlow<Boolean> = _savePdfTextToFile.asStateFlow()
-
     private val _logFiles = MutableStateFlow<List<LogFileInfo>>(emptyList())
     val logFiles: StateFlow<List<LogFileInfo>> = _logFiles.asStateFlow()
+
+    private val _savePdfTextToFile = MutableStateFlow(false)
+    val savePdfTextToFile: StateFlow<Boolean> = _savePdfTextToFile.asStateFlow()
 
     val profiles: StateFlow<List<OllamaProfile>> = settingsManager.getProfilesFlow()
     val activeProfile: StateFlow<OllamaProfile?> = settingsManager.getActiveProfileFlow()
@@ -86,12 +79,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private lateinit var ollamaApiPs: OllamaApiService
 
     init {
+        _savePdfTextToFile.value = settingsManager.getSavePdfTextToFile()
         viewModelScope.launch {
             settingsManager.getActiveProfileFlow().collect { createOllamaService() }
         }
         loadConversations()
         createOllamaService()
-        _savePdfTextToFile.value = settingsManager.getSavePdfTextToFile()
     }
 
     private fun createOllamaService() {
@@ -137,11 +130,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         ollamaApiPs = psRetrofit.create(OllamaApiService::class.java)
     }
 
-    fun setSavePdfTextToFile(save: Boolean) {
-        settingsManager.setSavePdfTextToFile(save)
-        _savePdfTextToFile.value = save
-    }
-
     fun addProfile(profile: OllamaProfile) {
         settingsManager.addProfile(profile)
     }
@@ -161,6 +149,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setActiveProfile(profileName: String) {
         settingsManager.setActiveProfile(profileName)
+    }
+
+    fun setSavePdfTextToFile(save: Boolean) {
+        settingsManager.setSavePdfTextToFile(save)
+        _savePdfTextToFile.value = save
     }
 
     private fun loadConversations() {
@@ -223,22 +216,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun onFileSelected(uri: Uri) {
         viewModelScope.launch {
             _selectedFileUri.value = uri
-            val mimeType = getApplication<Application>().contentResolver.getType(uri)
-            if (mimeType == "application/pdf") {
-                val text = readPdfContent(uri)
-                if (_savePdfTextToFile.value) {
-                    text?.let { saveTextToFile(it, uri) }
-                    _extractedFileText.value = ""
-                } else {
-                    _extractedFileText.value = text ?: ""
-                }
-            }
         }
     }
 
     fun clearSelectedFile() {
         _selectedFileUri.value = null
-        _extractedFileText.value = ""
     }
 
     private fun fileToBase64(uri: Uri): String? {
@@ -265,88 +247,64 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun readPdfContent(uri: Uri): String? {
+    private suspend fun pdfToImagesBase64(uri: Uri): List<String>? {
         return withContext(Dispatchers.IO) {
-            val logDir = getApplication<Application>().filesDir
-            val logFile = File(logDir, "ollama_log.txt")
+            val base64Images = mutableListOf<String>()
+            var pfd: ParcelFileDescriptor? = null
+            var renderer: PdfRenderer? = null
             try {
-                logFile.appendText("${getCurrentTimestamp()} - Starting PDF parsing.\n")
-                getApplication<Application>().contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
-                    PdfRenderer(pfd).use { renderer ->
-                        val pageCount = renderer.pageCount
-                        logFile.appendText("${getCurrentTimestamp()} - PDF has $pageCount pages.\n")
-                        val stringBuilder = StringBuilder()
-                        val recognizer =
-                            TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
+                pfd = getApplication<Application>().contentResolver.openFileDescriptor(uri, "r")
+                if (pfd == null) {
+                    withContext(Dispatchers.Main) {
+                        _inferenceStatus.value = "Error: Could not open file"
+                    }
+                    return@withContext null
+                }
+                renderer = PdfRenderer(pfd)
+                for (i in 0 until renderer.pageCount) {
+                    withContext(Dispatchers.Main) {
+                        _inferenceStatus.value = "Processing page ${i + 1}/${renderer.pageCount}..."
+                    }
+                    renderer.openPage(i)?.use { page ->
+                        val bitmap = Bitmap.createBitmap(
+                            page.width,
+                            page.height,
+                            Bitmap.Config.ARGB_8888
+                        )
+                        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
 
-                        for (i in 0 until pageCount) {
-                            logFile.appendText("${getCurrentTimestamp()} - Parsing page ${i + 1}/$pageCount.\n")
-                            renderer.openPage(i)?.use { page ->
-                                val bitmap = Bitmap.createBitmap(
-                                    page.width,
-                                    page.height,
-                                    Bitmap.Config.ARGB_8888
-                                )
-                                page.render(
-                                    bitmap,
-                                    null,
-                                    null,
-                                    PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY
-                                )
-
-                                val image = InputImage.fromBitmap(bitmap, 0)
-                                val result = recognizer.process(image).await()
-                                stringBuilder.append(result.text)
-                                logFile.appendText("${getCurrentTimestamp()} - Page ${i + 1} parsed. Text length: ${result.text.length}.\n")
-                            }
-                        }
-                        val fullText = stringBuilder.toString()
-                        logFile.appendText("${getCurrentTimestamp()} - PDF parsing finished. Total text length: ${fullText.length}.\n")
-                        fullText
+                        val outputStream = ByteArrayOutputStream()
+                        bitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
+                        val byteArray = outputStream.toByteArray()
+                        base64Images.add(Base64.encodeToString(byteArray, Base64.NO_WRAP))
+                        bitmap.recycle()
                     }
                 }
-            } catch (e: Exception) {
-                Log.e("MainViewModel", "Error reading PDF content", e)
-                logFile.appendText("${getCurrentTimestamp()} - Error reading PDF content: ${e.message}\n")
-                null
-            }
-        }
-    }
-
-    private fun getFileName(uri: Uri): String {
-        var fileName = "unknown_file"
-        val cursor: Cursor? = getApplication<Application>().contentResolver.query(uri, null, null, null, null)
-        cursor?.use {
-            if (it.moveToFirst()) {
-                val nameIndex = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (nameIndex != -1) {
-                    fileName = it.getString(nameIndex)
+                base64Images
+            } catch (e: FileNotFoundException) {
+                Log.e("MainViewModel", "PDF file not found", e)
+                withContext(Dispatchers.Main) {
+                    _inferenceStatus.value = "Error: File not found"
                 }
+                null
+            } catch (e: IOException) {
+                Log.e("MainViewModel", "Error reading PDF file, it may be corrupted", e)
+                withContext(Dispatchers.Main) {
+                    _inferenceStatus.value = "Error: Invalid PDF file"
+                }
+                null
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error converting PDF to images", e)
+                withContext(Dispatchers.Main) {
+                    _inferenceStatus.value = "Error: Failed to process PDF"
+                }
+                null
+            } finally {
+                renderer?.close()
+                pfd?.close()
             }
         }
-        return fileName
     }
-
-    private fun saveTextToFile(text: String, uri: Uri) {
-        val originalFileName = getFileName(uri)
-        val textFileName = originalFileName.substringBeforeLast('.') + ".txt"
-
-        val directory = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "ollama")
-        if (!directory.exists()) {
-            directory.mkdirs()
-        }
-
-        val file = File(directory, textFileName)
-        try {
-            FileOutputStream(file).use { fos ->
-                fos.write(text.toByteArray())
-            }
-            Log.i("MainViewModel", "Text saved to ${file.absolutePath}")
-        } catch (e: Exception) {
-            Log.e("MainViewModel", "Error saving text to file", e)
-        }
-    }
-
 
     fun sendMessage(prompt: String, conversationId: String) {
         viewModelScope.launch {
@@ -356,40 +314,78 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (conversation == null) return@launch
 
             val fileUri = _selectedFileUri.value
-            var fileBase64: String? = null
+            var imagesBase64: List<String>? = null
             var finalPrompt = prompt
 
             fileUri?.let {
                 val mimeType = getApplication<Application>().contentResolver.getType(it)
-                if (mimeType != null && mimeType.startsWith("text/")) {
-                    readFileContent(it)?.let { content ->
-                        finalPrompt = "$prompt\n\n--- Document Content ---\n$content"
+                val profile = activeProfile.value
+                if (profile != null) {
+                    if (mimeType == "application/pdf") {
+                        withContext(Dispatchers.Main) {
+                            _inferenceStatus.value = "Checking model..."
+                        }
+                        val modelDetails = try {
+                            val url = profile.apiHost.removeSuffix("/") + "/api/show"
+                            ollamaApi.show(url, ShowRequest(name = profile.model))
+                        } catch (e: Exception) {
+                            Log.e("MainViewModel", "Failed to get model details", e)
+                            null
+                        }
+
+                        val isVisionModel = modelDetails?.details?.families?.contains("clip") == true
+
+                        if (!isVisionModel) {
+                            addMessageToConversation(
+                                conversationId,
+                                ChatMessage(sender = "Error", content = "The active model does not support image input for PDF files.")
+                            )
+                            _inferenceStatus.value = "Error"
+                            return@launch
+                        }
+
+                        imagesBase64 = pdfToImagesBase64(it)
+                        if (imagesBase64 == null) {
+                            // pdfToImagesBase64 failed, error status is already set. Stop.
+                            return@launch
+                        }
+                    } else if (mimeType?.startsWith("image/") == true) {
+                        withContext(Dispatchers.Main) { _inferenceStatus.value = "Processing file..." }
+                        fileToBase64(it)?.let { base64 ->
+                            imagesBase64 = listOf(base64)
+                        }
+                    } else if (mimeType != null && mimeType.startsWith("text/")) {
+                        withContext(Dispatchers.Main) { _inferenceStatus.value = "Processing file..." }
+                        readFileContent(it)?.let { content ->
+                            finalPrompt = "$prompt\n\n--- Document Content ---\n$content"
+                        }
                     }
-                } else if (mimeType != "application/pdf") {
-                    fileBase64 = fileToBase64(it)
                 }
             }
+
 
             val userMessage = ChatMessage(sender = "You", content = finalPrompt, fileUri = _selectedFileUri.value)
             addMessageToConversation(conversationId, userMessage)
 
             _selectedFileUri.value = null
-            _extractedFileText.value = ""
 
             withContext(Dispatchers.IO) {
                 try {
                     val profile = activeProfile.value ?: return@withContext
                     val url = profile.apiHost.removeSuffix("/") + "/" + profile.apiPath.removePrefix("/")
                     withContext(Dispatchers.Main) {
-                        _connectionStatus.value = "Connecting..."
+                        _inferenceStatus.value = "Connecting..."
                     }
 
                     when (profile.apiMode) {
                         "Ollama" -> {
-                            val request = OllamaRequest(model = profile.model, prompt = finalPrompt, stream = true, images = fileBase64?.let { listOf(it) })
+                            withContext(Dispatchers.Main) {
+                                _inferenceStatus.value = "Sending..."
+                            }
+                            val request = OllamaRequest(model = profile.model, prompt = finalPrompt, stream = true, images = imagesBase64)
                             val responseBody = ollamaApi.generateOllamaStream(url = url, request = request)
                             withContext(Dispatchers.Main) {
-                                _connectionStatus.value = ""
+                                _inferenceStatus.value = "Waiting for response..."
                             }
                             val responseStream = responseBody.byteStream().bufferedReader()
 
@@ -407,7 +403,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                                     if (firstChunk) {
                                         withContext(Dispatchers.Main) {
-                                            _inferenceStatus.value = "Inferencing..."
+                                            _inferenceStatus.value = "Receiving..."
                                         }
                                         firstChunk = false
                                     }
@@ -442,26 +438,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 val role = if (msg.sender == "You") "user" else "assistant"
                                 val content = mutableListOf<OpenAIContent>()
                                 content.add(OpenAITextContent(text = msg.content))
-                                msg.fileUri?.let { uri ->
-                                    fileToBase64(uri)?.let {
-                                        val imageUrl = "data:image/jpeg;base64,$it"
-                                        content.add(OpenAIImageContent(image_url = OpenAIImageUrl(url = imageUrl)))
-                                    }
-                                }
+                                // Note: Previous images are not re-sent in this implementation
                                 OpenAIRequestMessage(role = role, content = content)
                             }
 
                             val content = mutableListOf<OpenAIContent>()
                             content.add(OpenAITextContent(text = finalPrompt))
-                            fileBase64?.let {
+                            imagesBase64?.forEach {
                                 val imageUrl = "data:image/jpeg;base64,$it"
                                 content.add(OpenAIImageContent(image_url = OpenAIImageUrl(url = imageUrl)))
                             }
                             val messages = previousMessages + listOf(OpenAIRequestMessage(role = "user", content = content))
                             val request = OpenAIRequest(model = profile.model, messages = messages, stream = true)
+                            withContext(Dispatchers.Main) {
+                                _inferenceStatus.value = "Sending..."
+                            }
                             val responseBody = ollamaApi.generateOpenAIStream(url = url, request = request)
                             withContext(Dispatchers.Main) {
-                                _connectionStatus.value = ""
+                                _inferenceStatus.value = "Waiting for response..."
                             }
                             val responseStream = responseBody.byteStream().bufferedReader()
 
@@ -480,7 +474,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                                     if (firstChunk) {
                                         withContext(Dispatchers.Main) {
-                                            _inferenceStatus.value = "Inferencing..."
+                                            _inferenceStatus.value = "Receiving..."
                                         }
                                         firstChunk = false
                                     }
@@ -512,7 +506,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         else -> {
                             withContext(Dispatchers.Main) {
                                 addMessageToConversation(conversationId, ChatMessage(sender = "Error", content = "Unsupported API mode"))
-                                _connectionStatus.value = "Error"
+                                _inferenceStatus.value = "Error"
                             }
                         }
                     }
@@ -528,15 +522,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             conversationId,
                             ChatMessage(sender = "Error", content = e.message ?: "Unknown error")
                         )
+                        _inferenceStatus.value = "Error: Connection failed"
                     }
                     Log.e("MainViewModel", "Error sending message", e)
-                    withContext(Dispatchers.Main) {
-                        _connectionStatus.value = "Error: Connection failed"
-                    }
                 } finally {
                     delay(2000)
                     withContext(Dispatchers.Main) {
-                        _connectionStatus.value = ""
                         _inferenceStatus.value = ""
                     }
                 }

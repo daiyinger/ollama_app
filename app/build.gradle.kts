@@ -71,12 +71,6 @@ dependencies {
     // Coil
     implementation("io.coil-kt:coil-compose:2.6.0")
 
-    // ML Kit Text Recognition (Bundled)
-    implementation("com.google.mlkit:text-recognition:16.0.0")
-    implementation("com.google.mlkit:text-recognition-chinese:16.0.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.0")
-
-
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

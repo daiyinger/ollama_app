@@ -104,6 +104,16 @@ data class OpenAIStreamResponse(
     val choices: List<OpenAIStreamChoice>
 )
 
+@Serializable
+data class ShowRequest(
+    val name: String
+)
+
+@Serializable
+data class ShowResponse(
+    val details: OllamaPsModelDetails
+)
+
 
 /** Response from the ps API */
 @Serializable
@@ -161,4 +171,8 @@ interface OllamaApiService {
     /** Get running models */
     @GET
     suspend fun getRunningModels(@Url url: String): OllamaPsResponse
+
+    /** Show model information */
+    @POST
+    suspend fun show(@Url url: String, @Body request: ShowRequest): ShowResponse
 }

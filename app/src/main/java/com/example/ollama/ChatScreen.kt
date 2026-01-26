@@ -44,7 +44,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -83,10 +82,8 @@ fun ChatScreen(
     var text by remember { mutableStateOf("") }
     val messages by viewModel.messages.collectAsState()
     val selectedFileUri by viewModel.selectedFileUri.collectAsState()
-    val extractedFileText by viewModel.extractedFileText.collectAsState()
     val listState = rememberLazyListState()
     val keyboardController = LocalSoftwareKeyboardController.current
-    val connectionStatus by viewModel.connectionStatus.collectAsState()
     val inferenceStatus by viewModel.inferenceStatus.collectAsState()
     val conversation = viewModel.conversations.collectAsState().value.find { it.id == conversationId }
     val profiles by viewModel.profiles.collectAsState()
@@ -103,12 +100,6 @@ fun ChatScreen(
     LaunchedEffect(conversationId) {
         conversationId?.let {
             viewModel.loadConversation(it)
-        }
-    }
-
-    LaunchedEffect(extractedFileText) {
-        if (extractedFileText.isNotBlank()) {
-            text = extractedFileText
         }
     }
 
@@ -135,14 +126,6 @@ fun ChatScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                        }
-                        if (connectionStatus.isNotBlank()) {
-                            Text(
-                                text = connectionStatus,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(start = 8.dp)
-                            )
                         }
                     }
                 },
