@@ -1,15 +1,16 @@
 package com.example.ollama
 
 import android.app.Application
-import android.database.Cursor
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.Environment
 import android.os.ParcelFileDescriptor
-import android.provider.OpenableColumns
 import android.util.Base64
 import android.util.Log
+import androidx.core.net.toUri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
@@ -28,7 +29,6 @@ import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import java.io.ByteArrayOutputStream
 import java.io.File
-import java.io.FileNotFoundException
 import java.io.FileOutputStream
 import java.io.IOException
 import java.text.SimpleDateFormat
@@ -40,6 +40,11 @@ import java.util.concurrent.TimeUnit
 data class RunningModelDisplayInfo(val name: String, val expirationTime: String)
 data class LogFileInfo(val file: File, val size: Long)
 
+data class PdfProcessingStatus(
+    val currentPage: Int,
+    val totalPages: Int,
+    val imageSize: Long
+)
 class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val settingsManager = SettingsManager(application)
@@ -71,6 +76,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _savePdfTextToFile = MutableStateFlow(false)
     val savePdfTextToFile: StateFlow<Boolean> = _savePdfTextToFile.asStateFlow()
+
+    private val _pdfProcessingStatus = MutableStateFlow<PdfProcessingStatus?>(null)
+    val pdfProcessingStatus: StateFlow<PdfProcessingStatus?> = _pdfProcessingStatus.asStateFlow()
 
     val profiles: StateFlow<List<OllamaProfile>> = settingsManager.getProfilesFlow()
     val activeProfile: StateFlow<OllamaProfile?> = settingsManager.getActiveProfileFlow()
@@ -247,24 +255,50 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun pdfToImagesBase64(uri: Uri): List<String>? {
+    private suspend fun saveBitmapToCache(bitmap: Bitmap, fileName: String): Uri? {
         return withContext(Dispatchers.IO) {
-            val base64Images = mutableListOf<String>()
+            val cacheDir = getApplication<Application>().cacheDir
+            val imageFile = File(cacheDir, fileName)
+            try {
+                FileOutputStream(imageFile).use { out ->
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 100, out)
+                }
+                imageFile.toUri()
+            } catch (e: IOException) {
+                Log.e("MainViewModel", "Error saving bitmap to cache", e)
+                null
+            }
+        }
+    }
+
+    private suspend fun processPdfPageByPage(conversationId: String, uri: Uri, prompt: String) {
+        withContext(Dispatchers.IO) {
             var pfd: ParcelFileDescriptor? = null
             var renderer: PdfRenderer? = null
+
             try {
                 pfd = getApplication<Application>().contentResolver.openFileDescriptor(uri, "r")
                 if (pfd == null) {
                     withContext(Dispatchers.Main) {
                         _inferenceStatus.value = "Error: Could not open file"
+                        addMessageToConversation(conversationId, ChatMessage(sender = "Error", content = "Could not open PDF file."))
                     }
-                    return@withContext null
+                    return@withContext
                 }
                 renderer = PdfRenderer(pfd)
-                for (i in 0 until renderer.pageCount) {
+                val pageCount = renderer.pageCount
+
+                for (i in 0 until pageCount) {
+                    val currentPage = i + 1
                     withContext(Dispatchers.Main) {
-                        _inferenceStatus.value = "Processing page ${i + 1}/${renderer.pageCount}..."
+                        _inferenceStatus.value = "Processing page $currentPage/$pageCount..."
                     }
+
+                    var imageBase64: String? = null
+                    var imageSize: Long = 0
+                    var pageBitmap: Bitmap? = null
+                    var cachedImageUri: Uri? = null
+
                     renderer.openPage(i)?.use { page ->
                         val bitmap = Bitmap.createBitmap(
                             page.width,
@@ -273,35 +307,97 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         )
                         page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
 
+                        val newBitmap = Bitmap.createBitmap(bitmap.width, bitmap.height, bitmap.config ?: Bitmap.Config.ARGB_8888)
+                        val canvas = Canvas(newBitmap)
+                        canvas.drawColor(Color.WHITE)
+                        canvas.drawBitmap(bitmap, 0f, 0f, null)
+                        pageBitmap = newBitmap
+
+                        cachedImageUri = saveBitmapToCache(newBitmap, "pdf_page_${System.currentTimeMillis()}.jpg")
+
                         val outputStream = ByteArrayOutputStream()
-                        bitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
+                        newBitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
                         val byteArray = outputStream.toByteArray()
-                        base64Images.add(Base64.encodeToString(byteArray, Base64.NO_WRAP))
-                        bitmap.recycle()
+                        imageSize = byteArray.size.toLong()
+                        imageBase64 = Base64.encodeToString(byteArray, Base64.NO_WRAP)
+                    }
+
+                    withContext(Dispatchers.Main) {
+                        _pdfProcessingStatus.value = PdfProcessingStatus(currentPage, pageCount, imageSize)
+                    }
+
+                    cachedImageUri?.let {
+                        val imageMessage = ChatMessage(
+                            sender = "You",
+                            content = "Page $currentPage/$pageCount",
+                            fileUri = it
+                        )
+                        withContext(Dispatchers.Main) {
+                            addMessageToConversation(conversationId, imageMessage)
+                        }
+                    }
+
+                    if (imageBase64 == null) {
+                        val errorMessage = "Error processing page $currentPage: Could not convert to image."
+                        withContext(Dispatchers.Main) {
+                            addMessageToConversation(conversationId, ChatMessage(sender = "Error", content = errorMessage))
+                        }
+                        continue
+                    }
+
+                    val pagePrompt = "The following image is a page from a document. Please identify the text on this page and return the recognized result. User prompt: '$prompt'"
+                    try {
+                        val profile = activeProfile.value ?: return@withContext
+                        val url = profile.apiHost.removeSuffix("/") + "/" + profile.apiPath.removePrefix("/")
+                        var analysis = ""
+
+                        when (profile.apiMode) {
+                            "Ollama" -> {
+                                val request = OllamaRequest(model = profile.model, prompt = pagePrompt, stream = false, images = listOf(imageBase64!!))
+                                val response = ollamaApi.generateOllama(url = url, request = request)
+                                analysis = response.response
+                            }
+                            "OpenAI API 兼容" -> {
+                                val content = mutableListOf<OpenAIContent>()
+                                content.add(OpenAITextContent(text = pagePrompt))
+                                val imageUrl = "data:image/jpeg;base64,$imageBase64"
+                                content.add(OpenAIImageContent(image_url = OpenAIImageUrl(url = imageUrl)))
+                                val messages = listOf(OpenAIRequestMessage(role = "user", content = content))
+                                val request = OpenAIRequest(model = profile.model, messages = messages, stream = false)
+                                val response = ollamaApi.generateOpenAI(url = url, request = request)
+                                analysis = response.choices.firstOrNull()?.message?.content ?: ""
+                            }
+                        }
+
+                        val analysisMessage = ChatMessage(sender = "Ollama", content = "**Page $currentPage:** $analysis")
+                        withContext(Dispatchers.Main) {
+                            addMessageToConversation(conversationId, analysisMessage)
+                        }
+
+                    } catch (e: Exception) {
+                        Log.e("MainViewModel", "Error processing page $currentPage", e)
+                        val errorMessage = "Error processing page $currentPage: ${e.message}"
+                        withContext(Dispatchers.Main) {
+                            addMessageToConversation(conversationId, ChatMessage(sender = "Error", content = errorMessage))
+                        }
+                    } finally {
+                        pageBitmap?.recycle()
                     }
                 }
-                base64Images
-            } catch (e: FileNotFoundException) {
-                Log.e("MainViewModel", "PDF file not found", e)
-                withContext(Dispatchers.Main) {
-                    _inferenceStatus.value = "Error: File not found"
-                }
-                null
-            } catch (e: IOException) {
-                Log.e("MainViewModel", "Error reading PDF file, it may be corrupted", e)
-                withContext(Dispatchers.Main) {
-                    _inferenceStatus.value = "Error: Invalid PDF file"
-                }
-                null
             } catch (e: Exception) {
-                Log.e("MainViewModel", "Error converting PDF to images", e)
+                Log.e("MainViewModel", "Error processing PDF", e)
+                val errorMessage = "Error processing PDF: ${e.message}"
                 withContext(Dispatchers.Main) {
+                    addMessageToConversation(conversationId, ChatMessage(sender = "Error", content = errorMessage))
                     _inferenceStatus.value = "Error: Failed to process PDF"
                 }
-                null
             } finally {
                 renderer?.close()
                 pfd?.close()
+                withContext(Dispatchers.Main) {
+                    _pdfProcessingStatus.value = null
+                    _inferenceStatus.value = "Done"
+                }
             }
         }
     }
@@ -344,11 +440,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             return@launch
                         }
 
-                        imagesBase64 = pdfToImagesBase64(it)
-                        if (imagesBase64 == null) {
-                            // pdfToImagesBase64 failed, error status is already set. Stop.
-                            return@launch
-                        }
+                        val userMessage = ChatMessage(sender = "You", content = finalPrompt, fileUri = _selectedFileUri.value)
+                        addMessageToConversation(conversationId, userMessage)
+                        _selectedFileUri.value = null
+
+                        processPdfPageByPage(conversationId, it, finalPrompt)
+
+                        return@launch
+
                     } else if (mimeType?.startsWith("image/") == true) {
                         withContext(Dispatchers.Main) { _inferenceStatus.value = "Processing file..." }
                         fileToBase64(it)?.let { base64 ->
@@ -494,6 +593,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                         withContext(Dispatchers.Main) {
                                             updateLastMessageInConversation(conversationId, ollamaMessage)
                                         }
+
                                     } catch (e: Exception) {
                                         Log.e("MainViewModel", "Error parsing JSON line: $line", e)
                                         withContext(Dispatchers.Main) {
