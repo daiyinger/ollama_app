@@ -388,14 +388,14 @@ fun MessageBubble(message: ChatMessage, onImageClick: (Uri) -> Unit) {
         ) {
             SelectionContainer {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    message.fileUri?.let {
+                    message.fileUri?.let { uri ->
                         AsyncImage(
-                            model = it,
+                            model = uri,
                             contentDescription = "Selected file",
                             modifier = Modifier
                                 .size(150.dp)
                                 .clip(RoundedCornerShape(12.dp))
-                                .clickable { onImageClick(it) },
+                                .clickable { onImageClick(uri) },
                             contentScale = ContentScale.Crop
                         )
                     }

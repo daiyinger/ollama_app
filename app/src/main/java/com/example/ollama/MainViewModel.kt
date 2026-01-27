@@ -1,6 +1,7 @@
 package com.example.ollama
 
 import android.app.Application
+import android.database.Cursor
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
@@ -8,6 +9,7 @@ import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.Environment
 import android.os.ParcelFileDescriptor
+import android.provider.OpenableColumns
 import android.util.Base64
 import android.util.Log
 import androidx.core.net.toUri
@@ -186,6 +188,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteConversation(conversationId: String) {
+        deleteCachedImagesForConversation(conversationId)
         _conversations.value = _conversations.value.filter { it.id != conversationId }
         saveConversations()
     }
@@ -246,18 +249,76 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun saveBitmapToCache(bitmap: Bitmap, fileName: String): Uri? {
+    private suspend fun saveBitmapToFile(bitmap: Bitmap, fileName: String): Uri? {
         return withContext(Dispatchers.IO) {
-            val cacheDir = getApplication<Application>().cacheDir
-            val imageFile = File(cacheDir, fileName)
+            val imageDir = File(getApplication<Application>().filesDir, "images")
+            if (!imageDir.exists()) {
+                imageDir.mkdirs()
+            }
+            val imageFile = File(imageDir, fileName)
             try {
                 FileOutputStream(imageFile).use { out ->
                     bitmap.compress(Bitmap.CompressFormat.JPEG, 100, out)
                 }
                 imageFile.toUri()
             } catch (e: IOException) {
-                Log.e("MainViewModel", "Error saving bitmap to cache", e)
+                Log.e("MainViewModel", "Error saving bitmap to file", e)
                 null
+            }
+        }
+    }
+    private suspend fun copyFileToInternalStorage(uri: Uri, conversationId: String): Uri? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val application = getApplication<Application>()
+                val contentResolver = application.contentResolver
+
+                // Get original file name
+                var fileName = "temp_file"
+                val cursor: Cursor? = contentResolver.query(uri, null, null, null, null)
+                cursor?.use {
+                    if (it.moveToFirst()) {
+                        val nameIndex = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        if (nameIndex != -1) {
+                            fileName = it.getString(nameIndex)
+                        }
+                    }
+                }
+
+                // Create a conversation-specific directory
+                val conversationDir = File(application.filesDir, "attachments/$conversationId")
+                if (!conversationDir.exists()) {
+                    conversationDir.mkdirs()
+                }
+
+                // Create a new file in the conversation directory
+                val newFile = File(conversationDir, fileName)
+
+                // Copy the file content
+                contentResolver.openInputStream(uri)?.use { inputStream ->
+                    FileOutputStream(newFile).use { outputStream ->
+                        inputStream.copyTo(outputStream)
+                    }
+                }
+
+                // Return the URI of the new file
+                newFile.toUri()
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error copying file to internal storage", e)
+                null
+            }
+        }
+    }
+
+    private fun deleteCachedImagesForConversation(conversationId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val conversationDir = File(getApplication<Application>().filesDir, "attachments/$conversationId")
+                if (conversationDir.exists()) {
+                    conversationDir.deleteRecursively()
+                }
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error deleting cached images", e)
             }
         }
     }
@@ -304,7 +365,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         canvas.drawBitmap(bitmap, 0f, 0f, null)
                         pageBitmap = newBitmap
 
-                        cachedImageUri = saveBitmapToCache(newBitmap, "pdf_page_${System.currentTimeMillis()}.jpg")
+                        cachedImageUri = saveBitmapToFile(newBitmap, "pdf_page_${System.currentTimeMillis()}.jpg")
 
                         val outputStream = ByteArrayOutputStream()
                         newBitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
@@ -400,7 +461,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val conversation = _conversations.value.find { it.id == conversationId }
             if (conversation == null) return@launch
 
-            val fileUri = _selectedFileUri.value
+            var fileUri = _selectedFileUri.value
             var imagesBase64: List<String>? = null
             var finalPrompt = prompt
 
@@ -452,9 +513,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         return@launch
 
                     } else if (mimeType?.startsWith("image/") == true) {
+                        fileUri = copyFileToInternalStorage(it, conversationId)
                         withContext(Dispatchers.Main) { _inferenceStatus.value = "Processing file..." }
-                        fileToBase64(it)?.let { base64 ->
-                            imagesBase64 = listOf(base64)
+                        fileUri?.let {
+                            fileToBase64(it)?.let { base64 ->
+                                imagesBase64 = listOf(base64)
+                            }
                         }
                     } else if (mimeType != null && mimeType.startsWith("text/")) {
                         withContext(Dispatchers.Main) { _inferenceStatus.value = "Processing file..." }
@@ -466,7 +530,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
 
 
-            val userMessage = ChatMessage(sender = "You", content = finalPrompt, fileUri = _selectedFileUri.value)
+            val userMessage = ChatMessage(sender = "You", content = finalPrompt, fileUri = fileUri)
             addMessageToConversation(conversationId, userMessage)
 
             _selectedFileUri.value = null
