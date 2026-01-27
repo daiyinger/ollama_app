@@ -10,7 +10,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -34,8 +33,6 @@ fun LogViewerScreen(
     onNavigateBack: () -> Unit,
 ) {
     val logContent by viewModel.logContent.collectAsState()
-    val runningModels by viewModel.runningModels.collectAsState()
-    val runningModelsError by viewModel.runningModelsError.collectAsState()
 
     Scaffold(
         topBar = {
@@ -63,22 +60,8 @@ fun LogViewerScreen(
             if (logContent.isNotEmpty()) {
                 Text(text = logContent, modifier = Modifier.padding(16.dp))
             } else {
-                runningModelsError?.let {
-                    if (it == "Loading...") {
-                        Box(modifier = Modifier.fillMaxSize()) {
-                            CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-                        }
-                    } else {
-                        Text(text = "Error: $it", modifier = Modifier.padding(16.dp))
-                    }
-                } ?: run {
-                    if (runningModels.isEmpty()) {
-                        Text(text = "No running models found.", modifier = Modifier.padding(16.dp))
-                    } else {
-                        runningModels.forEach { model ->
-                            Text(text = "${model.name} (Expires in: ${model.expirationTime})", modifier = Modifier.padding(16.dp))
-                        }
-                    }
+                Box(modifier = Modifier.fillMaxSize()) {
+                    Text(text = "No content.", modifier = Modifier.align(Alignment.Center))
                 }
             }
         }

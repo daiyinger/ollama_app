@@ -76,6 +76,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _logFiles = MutableStateFlow<List<LogFileInfo>>(emptyList())
     val logFiles: StateFlow<List<LogFileInfo>> = _logFiles.asStateFlow()
 
+    private val _selectedLogFile = MutableStateFlow<File?>(null)
+    val selectedLogFile: StateFlow<File?> = _selectedLogFile.asStateFlow()
+
     private val _pdfProcessingStatus = MutableStateFlow<PdfProcessingStatus?>(null)
     val pdfProcessingStatus: StateFlow<PdfProcessingStatus?> = _pdfProcessingStatus.asStateFlow()
 
@@ -855,40 +858,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val content = file.readText()
                     withContext(Dispatchers.Main) {
                         _logContent.value = content
+                        _selectedLogFile.value = file
                     }
                 } else {
                     withContext(Dispatchers.Main) {
                         _logContent.value = "Log file not found."
+                        _selectedLogFile.value = null
                     }
                 }
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Error reading log file", e)
                 withContext(Dispatchers.Main) {
                     _logContent.value = "Error reading log file: ${e.message}"
-                }
-            }
-        }
-    }
-
-    fun readLogFile() {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val logDir = getApplication<Application>().filesDir
-                val logFile = File(logDir, "ollama_log.txt")
-                if (logFile.exists()) {
-                    val content = logFile.readText()
-                    withContext(Dispatchers.Main) {
-                        _logContent.value = content
-                    }
-                } else {
-                    withContext(Dispatchers.Main) {
-                        _logContent.value = "Log file not found."
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e("MainViewModel", "Error reading log file", e)
-                withContext(Dispatchers.Main) {
-                    _logContent.value = "Error reading log file: ${e.message}"
+                    _selectedLogFile.value = null
                 }
             }
         }
@@ -910,17 +892,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun clearLogFile() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val logDir = getApplication<Application>().filesDir
-                val logFile = File(logDir, "ollama_log.txt")
-                if (logFile.exists()) {
-                    logFile.writeText("")
-                    withContext(Dispatchers.Main) {
-                        _logContent.value = ""
+                _selectedLogFile.value?.let { logFile ->
+                    if (logFile.exists()) {
+                        logFile.writeText("")
+                        withContext(Dispatchers.Main) {
+                            _logContent.value = ""
+                        }
+                    } else {
+                        withContext(Dispatchers.Main) {
+                            _logContent.value = "Log file not found."
+                        }
                     }
-                } else {
-                    withContext(Dispatchers.Main) {
-                        _logContent.value = "Log file not found."
-                    }
+                } ?: withContext(Dispatchers.Main) {
+                    _logContent.value = "No log file selected."
                 }
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Error clearing log file", e)
