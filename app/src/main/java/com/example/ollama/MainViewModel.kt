@@ -74,9 +74,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _logFiles = MutableStateFlow<List<LogFileInfo>>(emptyList())
     val logFiles: StateFlow<List<LogFileInfo>> = _logFiles.asStateFlow()
 
-    private val _savePdfTextToFile = MutableStateFlow(false)
-    val savePdfTextToFile: StateFlow<Boolean> = _savePdfTextToFile.asStateFlow()
-
     private val _pdfProcessingStatus = MutableStateFlow<PdfProcessingStatus?>(null)
     val pdfProcessingStatus: StateFlow<PdfProcessingStatus?> = _pdfProcessingStatus.asStateFlow()
 
@@ -87,7 +84,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private lateinit var ollamaApiPs: OllamaApiService
 
     init {
-        _savePdfTextToFile.value = settingsManager.getSavePdfTextToFile()
         viewModelScope.launch {
             settingsManager.getActiveProfileFlow().collect { createOllamaService() }
         }
@@ -157,11 +153,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setActiveProfile(profileName: String) {
         settingsManager.setActiveProfile(profileName)
-    }
-
-    fun setSavePdfTextToFile(save: Boolean) {
-        settingsManager.setSavePdfTextToFile(save)
-        _savePdfTextToFile.value = save
     }
 
     private fun loadConversations() {
@@ -429,7 +420,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             null
                         }
 
-                        val isVisionModel = modelDetails?.details?.families?.contains("clip") == true
+                        withContext(Dispatchers.IO) {
+                            Log.i("MainViewModel", "Model Details: $modelDetails")
+                            val logDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "ollama")
+                            // 如果目录不存在，则创建它
+                            if (!logDir.exists()) {
+                                logDir.mkdirs()
+                            }
+                            val logFile = File(logDir, "log.txt")
+                            logFile.appendText("${getCurrentTimestamp()} - Model Details: ${modelDetails?.let { json.encodeToString(it) } ?: "null"}\n")
+                        }
+
+                        val visionFamilies = profile.visionFamilies.split(",").map { it.trim() }
+                        val isVisionModel = modelDetails?.details?.families?.any { it in visionFamilies } == true
 
                         if (!isVisionModel) {
                             addMessageToConversation(

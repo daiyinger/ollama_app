@@ -35,7 +35,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
@@ -73,7 +72,6 @@ fun SettingsScreen(
 ) {
     val profiles by viewModel.profiles.collectAsState()
     val activeProfile by viewModel.activeProfile.collectAsState()
-    val savePdfTextToFile by viewModel.savePdfTextToFile.collectAsState()
     val logFiles by viewModel.logFiles.collectAsState()
     var showLogFilesDialog by remember { mutableStateOf(false) }
 
@@ -85,6 +83,7 @@ fun SettingsScreen(
     var model by remember(selectedProfile) { mutableStateOf(selectedProfile.model) }
     var apiKey by remember(selectedProfile) { mutableStateOf(selectedProfile.apiKey) }
     var apiMode by remember(selectedProfile) { mutableStateOf(selectedProfile.apiMode) }
+    var visionFamilies by remember(selectedProfile) { mutableStateOf(selectedProfile.visionFamilies) }
 
     var passwordVisible by remember { mutableStateOf(false) }
     var isApiModeExpanded by remember { mutableStateOf(false) }
@@ -100,7 +99,8 @@ fun SettingsScreen(
             apiPath != selectedProfile.apiPath ||
             model != selectedProfile.model ||
             apiKey != selectedProfile.apiKey ||
-            apiMode != selectedProfile.apiMode
+            apiMode != selectedProfile.apiMode ||
+            visionFamilies != selectedProfile.visionFamilies
 
     val hasOverallChanges = hasModelSettingsChanges || psPath != selectedProfile.psPath
 
@@ -111,7 +111,8 @@ fun SettingsScreen(
             apiPath = apiPath,
             model = model,
             apiKey = apiKey,
-            apiMode = apiMode
+            apiMode = apiMode,
+            visionFamilies = visionFamilies
         )
         if (profiles.any { it.name == name }) {
             viewModel.updateProfile(updatedProfile)
@@ -129,7 +130,8 @@ fun SettingsScreen(
             psPath = psPath,
             model = model,
             apiKey = apiKey,
-            apiMode = apiMode
+            apiMode = apiMode,
+            visionFamilies = visionFamilies
         )
         if (profiles.any { it.name == name }) {
             viewModel.updateProfile(updatedProfile)
@@ -386,6 +388,12 @@ fun SettingsScreen(
                             label = { Text(stringResource(R.string.model)) },
                             modifier = Modifier.fillMaxWidth()
                         )
+                        TextField(
+                            value = visionFamilies,
+                            onValueChange = { visionFamilies = it },
+                            label = { Text("Vision Families") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
                 }
                 TextField(
@@ -394,14 +402,6 @@ fun SettingsScreen(
                     label = { Text("PS Path") },
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Save PDF to file")
-                    Switch(
-                        checked = savePdfTextToFile,
-                        onCheckedChange = { viewModel.setSavePdfTextToFile(it) },
-                        modifier = Modifier.padding(start = 8.dp)
-                    )
-                }
             }
 
             Spacer(modifier = Modifier.padding(8.dp))

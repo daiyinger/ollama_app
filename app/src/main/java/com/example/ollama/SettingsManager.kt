@@ -17,17 +17,18 @@ data class OllamaProfile(
     val psPath: String,
     val model: String,
     val apiKey: String,
-    val apiMode: String
+    val apiMode: String,
+    val visionFamilies: String = "clip,vision"
 )
 
 class SettingsManager(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("ollama_settings", Context.MODE_PRIVATE)
+    private val json = Json { ignoreUnknownKeys = true }
 
     companion object {
         const val KEY_PROFILES = "profiles"
         const val KEY_ACTIVE_PROFILE_NAME = "active_profile_name"
         const val KEY_CONVERSATIONS = "conversations"
-        const val KEY_SAVE_PDF_TEXT_TO_FILE = "save_pdf_text_to_file"
 
         val defaultProfile = OllamaProfile(
             name = "Default",
@@ -36,7 +37,8 @@ class SettingsManager(context: Context) {
             psPath = "http://192.168.10.8:11434/api/ps",
             model = "llama2",
             apiKey = "",
-            apiMode = "Ollama"
+            apiMode = "Ollama",
+            visionFamilies = "clip,vision,qwen2vl"
         )
     }
 
@@ -65,10 +67,10 @@ class SettingsManager(context: Context) {
     fun getActiveProfileFlow(): StateFlow<OllamaProfile?> = _activeProfileFlow.asStateFlow()
 
     fun getProfiles(): List<OllamaProfile> {
-        val json = prefs.getString(KEY_PROFILES, null)
-        return if (json != null) {
+        val jsonString = prefs.getString(KEY_PROFILES, null)
+        return if (jsonString != null) {
             try {
-                Json.decodeFromString<List<OllamaProfile>>(json)
+                json.decodeFromString<List<OllamaProfile>>(jsonString)
             } catch (e: Exception) {
                 emptyList()
             }
@@ -78,7 +80,7 @@ class SettingsManager(context: Context) {
     }
 
     fun saveProfiles(profiles: List<OllamaProfile>) {
-        val json = Json.encodeToString(profiles)
+        val json = json.encodeToString(profiles)
         prefs.edit().putString(KEY_PROFILES, json).apply()
         _profilesFlow.value = profiles
     }
@@ -131,13 +133,5 @@ class SettingsManager(context: Context) {
 
     fun getConversations(): String {
         return prefs.getString(KEY_CONVERSATIONS, "") ?: ""
-    }
-
-    fun setSavePdfTextToFile(save: Boolean) {
-        prefs.edit().putBoolean(KEY_SAVE_PDF_TEXT_TO_FILE, save).apply()
-    }
-
-    fun getSavePdfTextToFile(): Boolean {
-        return prefs.getBoolean(KEY_SAVE_PDF_TEXT_TO_FILE, false)
     }
 }
