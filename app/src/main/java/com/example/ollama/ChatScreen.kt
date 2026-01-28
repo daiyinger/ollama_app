@@ -368,6 +368,42 @@ fun CodeBlock(codeText: String) {
     }
 }
 
+@Composable
+fun AttachmentView(uri: Uri, onImageClick: (Uri) -> Unit) {
+    val context = LocalContext.current
+    val mimeType = remember(uri) { getMimeType(context, uri) }
+
+    if (mimeType?.startsWith("image/") == true) {
+        AsyncImage(
+            model = uri,
+            contentDescription = "Selected file",
+            modifier = Modifier
+                .size(150.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .clickable { onImageClick(uri) },
+            contentScale = ContentScale.Crop
+        )
+    } else {
+        Row(
+            modifier = Modifier
+                .padding(8.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(Icons.Default.AttachFile, contentDescription = "File attachment")
+            Text(
+                text = getFileName(context, uri),
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MessageBubble(message: ChatMessage, onImageClick: (Uri) -> Unit) {
@@ -391,15 +427,7 @@ fun MessageBubble(message: ChatMessage, onImageClick: (Uri) -> Unit) {
             SelectionContainer {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     message.fileUri?.let { uri ->
-                        AsyncImage(
-                            model = uri,
-                            contentDescription = "Selected file",
-                            modifier = Modifier
-                                .size(150.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .clickable { onImageClick(uri) },
-                            contentScale = ContentScale.Crop
-                        )
+                        AttachmentView(uri = uri, onImageClick = onImageClick)
                     }
 
                     val parts = message.content.split("```")
@@ -460,20 +488,29 @@ fun ChatInputBar(
         shadowElevation = 8.dp
     ) {
         Column {
-            selectedFileUri?.let {
+            selectedFileUri?.let { uri ->
+                val mimeType = getMimeType(context, uri)
                 Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        AsyncImage(
-                            model = it,
-                            contentDescription = "Selected file thumbnail",
-                            modifier = Modifier
-                                .size(64.dp)
-                                .clip(RoundedCornerShape(8.dp)),
-                            contentScale = ContentScale.Crop
-                        )
+                        if (mimeType?.startsWith("image/") == true) {
+                            AsyncImage(
+                                model = uri,
+                                contentDescription = "Selected file thumbnail",
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(RoundedCornerShape(8.dp)),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            Icon(
+                                Icons.Default.AttachFile,
+                                contentDescription = "Selected file",
+                                modifier = Modifier.size(64.dp)
+                            )
+                        }
                         Spacer(modifier = Modifier.size(8.dp))
                         Text(
-                            text = getFileName(context, it),
+                            text = getFileName(context, uri),
                             style = MaterialTheme.typography.bodySmall,
                             maxLines = 2
                         )
@@ -574,6 +611,10 @@ fun ChatInputBar(
             }
         }
     }
+}
+
+fun getMimeType(context: Context, uri: Uri): String? {
+    return context.contentResolver.getType(uri)
 }
 
 fun getFileName(context: Context, uri: Uri): String {
