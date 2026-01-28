@@ -197,6 +197,51 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
         saveConversations()
     }
 
+    fun deleteMessage(conversationId: String, message: ChatMessage) {
+        viewModelScope.launch {
+            // Delete associated file from internal storage if it exists
+            message.fileUri?.let { uri ->
+                if (uri.scheme == "file") {
+                    uri.path?.let {
+                        withContext(Dispatchers.IO) {
+                            try {
+                                val file = File(it)
+                                if (file.exists()) {
+                                    file.delete()
+                                    Log.i("MainViewModel", "Deleted message file: $it")
+                                }
+                            } catch (e: Exception) {
+                                Log.e("MainViewModel", "Error deleting message file", e)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Remove the message from the conversation
+            val conversationIndex = _conversations.value.indexOfFirst { it.id == conversationId }
+            if (conversationIndex != -1) {
+                val updatedConversations = _conversations.value.toMutableList()
+                val oldConversation = updatedConversations[conversationIndex]
+
+                val newMessages = oldConversation.messages.toMutableList()
+                val wasRemoved = newMessages.remove(message)
+
+                if (wasRemoved) {
+                    val updatedConversation = oldConversation.copy(messages = newMessages)
+                    updatedConversations[conversationIndex] = updatedConversation
+                    _conversations.value = updatedConversations
+                    if (conversationId == _activeConversationId.value) {
+                        _messages.value = newMessages
+                    }
+                    saveConversations()
+                } else {
+                    Log.w("MainViewModel", "Message to delete not found in conversation.")
+                }
+            }
+        }
+    }
+
     fun renameConversation(conversationId: String, newTitle: String) {
         val conversationIndex = _conversations.value.indexOfFirst { it.id == conversationId }
         if (conversationIndex != -1) {
@@ -431,6 +476,7 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                             }
                         }
                     } else if (mimeType != null && mimeType.startsWith("text/")) {
+                        fileUri = copyFileToInternalStorage(it, conversationId)
                         updateConversationInferenceStatus(conversationId, "Processing file...")
                         readFileContent(it)?.let { content ->
                             finalPrompt = "$prompt\n\n--- Document Content ---\n$content"

@@ -17,6 +17,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -82,6 +83,24 @@ fun ChatScreen(
     val activeProfile by viewModel.activeProfile.collectAsState()
     val coroutineScope = rememberCoroutineScope()
     var enlargedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var messageToDelete by remember { mutableStateOf<ChatMessage?>(null) }
+
+    if (showDeleteDialog && messageToDelete != null) {
+        DeleteConfirmationDialog(
+            onConfirm = {
+                if (conversationId != null) {
+                    viewModel.deleteMessage(conversationId, messageToDelete!!)
+                }
+                showDeleteDialog = false
+                messageToDelete = null
+            },
+            onDismiss = {
+                showDeleteDialog = false
+                messageToDelete = null
+            }
+        )
+    }
 
     if (enlargedImageUri != null) {
         EnlargedImageDialog(
@@ -191,9 +210,16 @@ fun ChatScreen(
                 }
             }
             items(reversedMessages) { message ->
-                MessageBubble(message = message) { uri ->
-                    enlargedImageUri = uri
-                }
+                MessageBubble(
+                    message = message,
+                    onImageClick = { uri ->
+                        enlargedImageUri = uri
+                    },
+                    onMessageLongPress = {
+                        messageToDelete = it
+                        showDeleteDialog = true
+                    }
+                )
             }
         }
     }
@@ -412,9 +438,31 @@ fun AttachmentView(uri: Uri, onImageClick: (Uri) -> Unit) {
     }
 }
 
+@Composable
+fun DeleteConfirmationDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = "Delete Message") },
+        text = { Text(text = "Are you sure you want to delete this message?") },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("Delete")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun MessageBubble(message: ChatMessage, onImageClick: (Uri) -> Unit) {
+fun MessageBubble(message: ChatMessage, onImageClick: (Uri) -> Unit, onMessageLongPress: (ChatMessage) -> Unit) {
     val isUserMessage = message.sender.equals("You", ignoreCase = true)
     val arrangement = if (isUserMessage) Arrangement.End else Arrangement.Start
     val backgroundColor = if (isUserMessage) {
@@ -430,7 +478,11 @@ fun MessageBubble(message: ChatMessage, onImageClick: (Uri) -> Unit) {
     ) {
         Surface(
             shape = RoundedCornerShape(16.dp),
-            color = backgroundColor
+            color = backgroundColor,
+            modifier = Modifier.combinedClickable(
+                onClick = {},
+                onLongClick = { onMessageLongPress(message) }
+            )
         ) {
             SelectionContainer {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
