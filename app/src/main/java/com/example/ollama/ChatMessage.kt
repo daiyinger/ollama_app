@@ -9,5 +9,6 @@ data class ChatMessage(
     val content: String,
     @Serializable(with = UriSerializer::class)
     val fileUri: Uri? = null,
+    val fileMimeType: String? = null,
     val performance: String? = null
 )

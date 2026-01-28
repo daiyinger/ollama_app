@@ -8,7 +8,9 @@ import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 import android.util.Log
+import android.webkit.MimeTypeMap
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -60,6 +62,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.io.OutputStream
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -374,6 +377,7 @@ fun AttachmentView(uri: Uri, onImageClick: (Uri) -> Unit) {
     val mimeType = remember(uri) { getMimeType(context, uri) }
 
     if (mimeType?.startsWith("image/") == true) {
+        Log.i("ChatScreen", "AttachmentView is image: $uri")
         AsyncImage(
             model = uri,
             contentDescription = "Selected file",
@@ -384,6 +388,10 @@ fun AttachmentView(uri: Uri, onImageClick: (Uri) -> Unit) {
             contentScale = ContentScale.Crop
         )
     } else {
+        Log.i("ChatScreen", "AttachmentView is not image: $uri, mimeType: $mimeType")
+        val isPdf = mimeType == "application/pdf"
+        val icon = if (isPdf) Icons.Default.PictureAsPdf else Icons.Default.AttachFile
+        val description = if (isPdf) "PDF attachment" else "File attachment"
         Row(
             modifier = Modifier
                 .padding(8.dp)
@@ -393,7 +401,7 @@ fun AttachmentView(uri: Uri, onImageClick: (Uri) -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Icon(Icons.Default.AttachFile, contentDescription = "File attachment")
+            Icon(icon, contentDescription = description)
             Text(
                 text = getFileName(context, uri),
                 style = MaterialTheme.typography.bodyMedium,
@@ -493,6 +501,7 @@ fun ChatInputBar(
                 Box(modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (mimeType?.startsWith("image/") == true) {
+                            Log.i("ChatScreen", "ChatInputBar is image: $uri")
                             AsyncImage(
                                 model = uri,
                                 contentDescription = "Selected file thumbnail",
@@ -614,21 +623,48 @@ fun ChatInputBar(
 }
 
 fun getMimeType(context: Context, uri: Uri): String? {
-    return context.contentResolver.getType(uri)
+    var mimeType: String? = context.contentResolver.getType(uri)
+    if (mimeType == null) {
+        val fileExtension = MimeTypeMap.getFileExtensionFromUrl(uri.toString())
+        mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(fileExtension.lowercase(Locale.ROOT))
+    }
+    return mimeType
 }
 
 fun getFileName(context: Context, uri: Uri): String {
-    var fileName = "unknown_file"
-    val cursor = context.contentResolver.query(uri, null, null, null, null)
-    cursor?.use {
-        if (it.moveToFirst()) {
-            val nameIndex = it.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
-            if (nameIndex != -1) {
-                fileName = it.getString(nameIndex)
+    var fileName: String? = null
+
+    // 方案一：尝试通过 ContentResolver 查询（这是最可靠的方法）
+    if (uri.scheme == "content") {
+        val cursor = context.contentResolver.query(uri, null, null, null, null)
+        cursor?.use {
+            if (it.moveToFirst()) {
+                val nameIndex = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (nameIndex != -1) {
+                    fileName = it.getString(nameIndex)
+                }
             }
         }
     }
-    return fileName
+
+    // 方案二：如果方案一失败，尝试从路径中提取
+    if (fileName == null) {
+        Log.i("ChatScreen", "getFileName: retry")
+        fileName = uri.path
+        val cut = fileName?.lastIndexOf('/')
+        if (cut != null && cut != -1) {
+            fileName = fileName?.substring(cut + 1)
+        }
+    }
+
+    // 如果文件名中包含编码字符（如 %20），进行解码
+    return try {
+        // 使用 java.net.URLDecoder 来处理可能存在的URL编码
+        java.net.URLDecoder.decode(fileName, "UTF-8") ?: "unknown_file"
+    } catch (e: Exception) {
+        // 解码失败时返回原始文件名或默认值
+        fileName ?: "unknown_file"
+    }
 }
 
 class FakeMainViewModel(application: Application) : MainViewModel(application) {
