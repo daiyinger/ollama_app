@@ -13,7 +13,6 @@ import androidx.core.net.toUri
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -26,7 +25,7 @@ class PdfProcessor(
     private val application: Application,
     private val ollamaApi: OllamaApiService,
     private val json: Json,
-    private val activeProfile: StateFlow<OllamaProfile?>,
+    private val activeProfile: OllamaProfile?,
     private val coroutineScope: CoroutineScope,
     private val onStatusUpdate: (String, String) -> Unit,
     private val onPageProcessed: (String, ChatMessage) -> Unit,
@@ -134,7 +133,7 @@ class PdfProcessor(
 
                     val pagePrompt = "The following image is a page from a document. Please identify the text on this page and return the recognized result. User prompt: '$prompt'"
                     try {
-                        val profile = activeProfile.value ?: return@withContext
+                        val profile = activeProfile ?: return@withContext
                         val url = profile.apiHost.removeSuffix("/") + "/" + profile.apiPath.removePrefix("/")
                         var analysis = ""
 

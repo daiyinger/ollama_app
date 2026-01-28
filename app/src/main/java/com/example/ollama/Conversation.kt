@@ -9,5 +9,6 @@ data class Conversation(
     val title: String,
     val messages: List<ChatMessage> = emptyList(),
     val inferenceStatus: String = "",
-    val pdfProcessingStatus: PdfProcessingStatus? = null
+    val pdfProcessingStatus: PdfProcessingStatus? = null,
+    val profileName: String? = null
 )

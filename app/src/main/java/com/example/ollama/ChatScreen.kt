@@ -157,7 +157,9 @@ fun ChatScreen(
                 profiles = profiles,
                 activeProfile = activeProfile,
                 onProfileSelected = { profile ->
-                    viewModel.setActiveProfile(profile.name)
+                    if (conversationId != null) {
+                        viewModel.setProfileForConversation(conversationId, profile.name)
+                    }
                 }
             )
         }

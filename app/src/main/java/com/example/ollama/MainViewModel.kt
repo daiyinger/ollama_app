@@ -183,7 +183,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun createConversation(): Conversation {
-        val newConversation = Conversation(title = "New Conversation")
+        val newConversation = Conversation(title = "New Conversation", profileName = activeProfile.value?.name)
         _conversations.value = _conversations.value + newConversation
         saveConversations()
         return newConversation
@@ -212,9 +212,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val conversation = _conversations.value.find { it.id == conversationId }
         if (conversation != null) {
             _messages.value = conversation.messages
+            conversation.profileName?.let {
+                settingsManager.setActiveProfile(it)
+            }
         } else {
             // Handle case where conversation is not found, maybe create a new one or show an error
             _messages.value = emptyList()
+        }
+    }
+
+    fun setProfileForConversation(conversationId: String, profileName: String) {
+        val conversationIndex = _conversations.value.indexOfFirst { it.id == conversationId }
+        if (conversationIndex != -1) {
+            val updatedConversations = _conversations.value.toMutableList()
+            val oldConversation = updatedConversations[conversationIndex]
+            val updatedConversation = oldConversation.copy(profileName = profileName)
+            updatedConversations[conversationIndex] = updatedConversation
+            _conversations.value = updatedConversations
+            saveConversations()
+            settingsManager.setActiveProfile(profileName)
         }
     }
 
@@ -319,9 +335,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             var imagesBase64: List<String>? = null
             var finalPrompt = prompt
 
+            val profile = profiles.value.find { it.name == conversation.profileName } ?: activeProfile.value
+
             fileUri?.let {
                 val mimeType = getApplication<Application>().contentResolver.getType(it)
-                val profile = activeProfile.value
                 if (profile != null) {
                     if (mimeType == "application/pdf") {
                         var isVisionModel = false
@@ -372,7 +389,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             application = getApplication(),
                             ollamaApi = ollamaApi,
                             json = json,
-                            activeProfile = activeProfile,
+                            activeProfile = profile,
                             coroutineScope = viewModelScope,
                             onStatusUpdate = { convId, status ->
                                 updateConversationInferenceStatus(convId, status)
@@ -411,7 +428,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             withContext(Dispatchers.IO) {
                 try {
-                    val profile = activeProfile.value ?: return@withContext
+                    if (profile == null) return@withContext
                     val url = profile.apiHost.removeSuffix("/") + "/" + profile.apiPath.removePrefix("/")
                     updateConversationInferenceStatus(conversationId, "Connecting...")
 
