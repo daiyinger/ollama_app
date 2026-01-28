@@ -1,6 +1,7 @@
 package com.example.ollama
 
 import android.app.Application
+import android.content.Intent
 import android.database.Cursor
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -93,6 +94,18 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
         }
         loadConversations()
         createOllamaService()
+    }
+
+    fun onAppEnterBackground() {
+        val application = getApplication<Application>()
+        val intent = Intent(application, OllamaForegroundService::class.java)
+        application.startService(intent)
+    }
+
+    fun onAppEnterForeground() {
+        val application = getApplication<Application>()
+        val intent = Intent(application, OllamaForegroundService::class.java)
+        application.stopService(intent)
     }
 
     private fun createOllamaService() {

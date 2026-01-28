@@ -70,4 +70,14 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onStop() {
+        super.onStop()
+        viewModel.onAppEnterBackground()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        viewModel.onAppEnterForeground()
+    }
 }
