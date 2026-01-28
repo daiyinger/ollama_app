@@ -7,7 +7,6 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
-import android.os.Build
 import android.provider.MediaStore
 import android.util.Log
 import android.widget.Toast
@@ -50,11 +49,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.core.graphics.createBitmap
 import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import com.example.ollama.ui.theme.OllamaTheme
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.io.OutputStream
 
@@ -138,6 +141,7 @@ fun ChatScreen(
             )
         },
         bottomBar = {
+            val isProcessingPdf = conversation?.pdfProcessingStatus != null
             ChatInputBar(
                 text = text,
                 onTextChange = { text = it },
@@ -160,6 +164,10 @@ fun ChatScreen(
                     if (conversationId != null) {
                         viewModel.setProfileForConversation(conversationId, profile.name)
                     }
+                },
+                isProcessingPdf = isProcessingPdf,
+                onStopPdfProcessing = {
+                    conversationId?.let { viewModel.stopPdfProcessing(it) }
                 }
             )
         }
@@ -194,7 +202,7 @@ fun EnlargedImageDialog(imageUri: Uri, onDismiss: () -> Unit) {
     val coroutineScope = rememberCoroutineScope()
 
     Dialog(onDismissRequest = onDismiss) {
-        var scale by remember { mutableStateOf(1f) }
+        var scale by remember { mutableFloatStateOf(1f) }
         var offset by remember { mutableStateOf(Offset.Zero) }
         Box(
             modifier = Modifier
@@ -254,23 +262,17 @@ suspend fun saveImageToGallery(context: Context, imageUri: Uri): Boolean {
     }
 
     val bitmap = result.bitmap
-    val newBitmap = Bitmap.createBitmap(bitmap.width, bitmap.height, bitmap.config ?: Bitmap.Config.ARGB_8888)
+    val newBitmap = createBitmap(bitmap.width, bitmap.height, bitmap.config ?: Bitmap.Config.ARGB_8888)
     val canvas = Canvas(newBitmap)
     canvas.drawColor(android.graphics.Color.WHITE)
     canvas.drawBitmap(bitmap, 0f, 0f, null)
 
-    val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-        MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-    } else {
-        MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-    }
+    val collection = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
 
     val contentValues = ContentValues().apply {
         put(MediaStore.Images.Media.DISPLAY_NAME, "ollama_image_${System.currentTimeMillis()}.jpg")
         put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            put(MediaStore.Images.Media.IS_PENDING, 1)
-        }
+        put(MediaStore.Images.Media.IS_PENDING, 1)
     }
 
     val contentResolver = context.contentResolver
@@ -286,11 +288,9 @@ suspend fun saveImageToGallery(context: Context, imageUri: Uri): Boolean {
             return false
         }
         newBitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            contentValues.clear()
-            contentValues.put(MediaStore.Images.Media.IS_PENDING, 0)
-            contentResolver.update(uri, contentValues, null, null)
-        }
+        contentValues.clear()
+        contentValues.put(MediaStore.Images.Media.IS_PENDING, 0)
+        contentResolver.update(uri, contentValues, null, null)
         true
     } catch (e: Exception) {
         uri?.let { contentResolver.delete(it, null, null) }
@@ -321,7 +321,6 @@ fun PdfProcessingStatusView(status: PdfProcessingStatus) {
 
 @Composable
 fun CodeBlock(codeText: String) {
-    val coroutineScope = rememberCoroutineScope()
     val clipboardManager = LocalClipboardManager.current
     Column(
         modifier = Modifier
@@ -344,9 +343,7 @@ fun CodeBlock(codeText: String) {
                 style = MaterialTheme.typography.labelSmall
             )
             IconButton(onClick = {
-                coroutineScope.launch {
-                    clipboardManager.setText(AnnotatedString(codeText))
-                }
+                clipboardManager.setText(AnnotatedString(codeText))
             }) {
                 Icon(
                     Icons.Default.ContentCopy,
@@ -451,7 +448,9 @@ fun ChatInputBar(
     onSendClick: () -> Unit,
     profiles: List<OllamaProfile>,
     activeProfile: OllamaProfile?,
-    onProfileSelected: (OllamaProfile) -> Unit
+    onProfileSelected: (OllamaProfile) -> Unit,
+    isProcessingPdf: Boolean,
+    onStopPdfProcessing: () -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -498,11 +497,20 @@ fun ChatInputBar(
                     .padding(start = 8.dp, end = 8.dp, top = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onAddFileClick) {
-                    Icon(
-                        Icons.Default.AttachFile,
-                        contentDescription = stringResource(R.string.add_file)
-                    )
+                if (isProcessingPdf) {
+                    IconButton(onClick = onStopPdfProcessing) {
+                        Icon(
+                            Icons.Default.Stop,
+                            contentDescription = "Stop PDF Processing"
+                        )
+                    }
+                } else {
+                    IconButton(onClick = onAddFileClick) {
+                        Icon(
+                            Icons.Default.AttachFile,
+                            contentDescription = stringResource(R.string.add_file)
+                        )
+                    }
                 }
                 OutlinedTextField(
                     value = text,
@@ -582,13 +590,35 @@ fun getFileName(context: Context, uri: Uri): String {
     return fileName
 }
 
+class FakeMainViewModel(application: Application) : MainViewModel(application) {
+    override val conversations: StateFlow<List<Conversation>> = MutableStateFlow(
+        listOf(
+            Conversation(
+                id = "1",
+                title = "Test Conversation",
+                messages = mutableListOf(),
+                pdfProcessingStatus = PdfProcessingStatus(1, 10, 12345)
+            )
+        )
+    ).asStateFlow()
+
+    override val messages: StateFlow<List<ChatMessage>> = MutableStateFlow(
+        listOf(
+            ChatMessage(sender = "You", content = "Hello"),
+            ChatMessage(sender = "Ollama", content = "Hi there!")
+        )
+    ).asStateFlow()
+
+    override val selectedFileUri: StateFlow<Uri?> = MutableStateFlow(Uri.EMPTY).asStateFlow()
+}
+
 @Preview(showBackground = true)
 @Composable
 fun ChatScreenPreview() {
     OllamaTheme {
         ChatScreen(
-            viewModel = MainViewModel(LocalContext.current.applicationContext as Application),
-            conversationId = null,
+            viewModel = FakeMainViewModel(LocalContext.current.applicationContext as Application),
+            conversationId = "1",
             onNavigateUp = {}
         )
     }

@@ -49,19 +49,19 @@ data class PdfProcessingStatus(
     val totalPages: Int,
     val imageSize: Long
 )
-class MainViewModel(application: Application) : AndroidViewModel(application) {
+open class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val settingsManager = SettingsManager(application)
     private val json = Json { ignoreUnknownKeys = true }
 
     private val _conversations = MutableStateFlow<List<Conversation>>(emptyList())
-    val conversations: StateFlow<List<Conversation>> = _conversations.asStateFlow()
+    open val conversations: StateFlow<List<Conversation>> = _conversations.asStateFlow()
 
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
-    val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
+    open val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
 
     private val _selectedFileUri = MutableStateFlow<Uri?>(null)
-    val selectedFileUri: StateFlow<Uri?> = _selectedFileUri.asStateFlow()
+    open val selectedFileUri: StateFlow<Uri?> = _selectedFileUri.asStateFlow()
 
     private val _runningModels = MutableStateFlow<List<RunningModelDisplayInfo>>(emptyList())
     val runningModels: StateFlow<List<RunningModelDisplayInfo>> = _runningModels.asStateFlow()
@@ -244,6 +244,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _selectedFileUri.value = null
     }
 
+    fun stopPdfProcessing(conversationId: String) {
+        pdfProcessingJobs[conversationId]?.cancel()
+        pdfProcessingJobs.remove(conversationId)
+        updateConversationPdfProcessingStatus(conversationId, null)
+        updateConversationInferenceStatus(conversationId, "PDF processing stopped.")
+    }
+
     private fun fileToBase64(uri: Uri): String? {
         return try {
             getApplication<Application>().contentResolver.openInputStream(uri)?.use { inputStream ->
@@ -369,7 +376,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             isVisionModel = true
                         }
 
-
                         if (!isVisionModel) {
                             addMessageToConversation(
                                 conversationId,
@@ -379,8 +385,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             return@launch
                         }
 
-                        val userMessage = ChatMessage(sender = "You", content = finalPrompt, fileUri = _selectedFileUri.value)
-                        //addMessageToConversation(conversationId, userMessage)
+                        updateConversationInferenceStatus(conversationId, "Processing PDF...")
+                        val copiedUri = copyFileToInternalStorage(it, conversationId)
+                        if (copiedUri == null) {
+                            addMessageToConversation(
+                                conversationId,
+                                ChatMessage(sender = "Error", content = "Failed to save the PDF file for processing.")
+                            )
+                            updateConversationInferenceStatus(conversationId, "Error")
+                            return@launch
+                        }
+
+                        val userMessage = ChatMessage(sender = "You", content = finalPrompt, fileUri = copiedUri)
+                        addMessageToConversation(conversationId, userMessage)
                         _selectedFileUri.value = null
 
                         pdfProcessingJobs[conversationId]?.cancel()
@@ -399,7 +416,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 updateConversationPdfProcessingStatus(convId, status)
                             }
                         )
-                        pdfProcessingJobs[conversationId] = pdfProcessor.process(conversationId, it, finalPrompt)
+                        pdfProcessingJobs[conversationId] = pdfProcessor.process(conversationId, copiedUri, finalPrompt)
 
                         return@launch
 
@@ -419,7 +436,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             }
-
 
             val userMessage = ChatMessage(sender = "You", content = finalPrompt, fileUri = fileUri)
             addMessageToConversation(conversationId, userMessage)
