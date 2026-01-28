@@ -85,7 +85,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private lateinit var ollamaApi: OllamaApiService
     private lateinit var ollamaApiPs: OllamaApiService
-    private var pdfProcessingJob: Job? = null
+    private val pdfProcessingJobs = mutableMapOf<String, Job>()
 
     init {
         viewModelScope.launch {
@@ -366,7 +366,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         //addMessageToConversation(conversationId, userMessage)
                         _selectedFileUri.value = null
 
-                        pdfProcessingJob?.cancel()
+                        pdfProcessingJobs[conversationId]?.cancel()
 
                         val pdfProcessor = PdfProcessor(
                             application = getApplication(),
@@ -382,7 +382,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 updateConversationPdfProcessingStatus(convId, status)
                             }
                         )
-                        pdfProcessingJob = pdfProcessor.process(conversationId, it, finalPrompt)
+                        pdfProcessingJobs[conversationId] = pdfProcessor.process(conversationId, it, finalPrompt)
 
                         return@launch
 
