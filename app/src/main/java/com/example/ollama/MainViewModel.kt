@@ -183,7 +183,9 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun createConversation(): Conversation {
-        val newConversation = Conversation(title = "New Conversation", profileName = activeProfile.value?.name)
+        val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+        val currentTime = sdf.format(Date())
+        val newConversation = Conversation(title = "Chat $currentTime", profileName = activeProfile.value?.name)
         _conversations.value = _conversations.value + newConversation
         saveConversations()
         return newConversation
@@ -566,7 +568,7 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                     // Auto-generate title for new conversations
                     val currentConversation = _conversations.value.find { it.id == conversationId }
-                    if (currentConversation != null && currentConversation.title == "New Conversation" && currentConversation.messages.size > 1) {
+                    if (currentConversation != null && currentConversation.title.startsWith("Chat ") && currentConversation.messages.size > 1) {
                         generateConversationTitle(conversationId)
                     }
 

@@ -132,7 +132,7 @@ fun ConversationHistoryScreen(
                 val newConversation = viewModel.createConversation()
                 onNavigateToConversation(newConversation.id)
             }) {
-                Icon(Icons.Default.Add, contentDescription = "New Conversation")
+                Icon(Icons.Default.Add, contentDescription = "New Chat")
             }
         }
     ) { padding ->
