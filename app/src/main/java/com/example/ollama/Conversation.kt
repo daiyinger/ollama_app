@@ -6,6 +6,8 @@ import java.util.UUID
 @Serializable
 data class Conversation(
     val id: String = UUID.randomUUID().toString(),
-    var title: String,
-    val messages: MutableList<ChatMessage> = mutableListOf()
+    val title: String,
+    val messages: List<ChatMessage> = emptyList(),
+    val inferenceStatus: String = "",
+    val pdfProcessingStatus: PdfProcessingStatus? = null
 )

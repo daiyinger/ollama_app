@@ -37,6 +37,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -84,6 +85,7 @@ fun SettingsScreen(
     var apiKey by remember(selectedProfile) { mutableStateOf(selectedProfile.apiKey) }
     var apiMode by remember(selectedProfile) { mutableStateOf(selectedProfile.apiMode) }
     var visionFamilies by remember(selectedProfile) { mutableStateOf(selectedProfile.visionFamilies) }
+    var checkImageProcessing by remember(selectedProfile) { mutableStateOf(selectedProfile.checkImageProcessing) }
 
     var passwordVisible by remember { mutableStateOf(false) }
     var isApiModeExpanded by remember { mutableStateOf(false) }
@@ -100,7 +102,8 @@ fun SettingsScreen(
             model != selectedProfile.model ||
             apiKey != selectedProfile.apiKey ||
             apiMode != selectedProfile.apiMode ||
-            visionFamilies != selectedProfile.visionFamilies
+            visionFamilies != selectedProfile.visionFamilies ||
+            checkImageProcessing != selectedProfile.checkImageProcessing
 
     val hasOverallChanges = hasModelSettingsChanges || psPath != selectedProfile.psPath
 
@@ -112,7 +115,8 @@ fun SettingsScreen(
             model = model,
             apiKey = apiKey,
             apiMode = apiMode,
-            visionFamilies = visionFamilies
+            visionFamilies = visionFamilies,
+            checkImageProcessing = checkImageProcessing
         )
         if (profiles.any { it.name == name }) {
             viewModel.updateProfile(updatedProfile)
@@ -131,7 +135,8 @@ fun SettingsScreen(
             model = model,
             apiKey = apiKey,
             apiMode = apiMode,
-            visionFamilies = visionFamilies
+            visionFamilies = visionFamilies,
+            checkImageProcessing = checkImageProcessing
         )
         if (profiles.any { it.name == name }) {
             viewModel.updateProfile(updatedProfile)
@@ -394,6 +399,17 @@ fun SettingsScreen(
                             label = { Text("Vision Families") },
                             modifier = Modifier.fillMaxWidth()
                         )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(text = "检查图片处理能力")
+                            Switch(
+                                checked = checkImageProcessing,
+                                onCheckedChange = { checkImageProcessing = it }
+                            )
+                        }
                     }
                 }
                 TextField(

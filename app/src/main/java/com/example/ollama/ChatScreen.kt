@@ -46,6 +46,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -70,8 +71,6 @@ fun ChatScreen(
     val selectedFileUri by viewModel.selectedFileUri.collectAsState()
     val listState = rememberLazyListState()
     val keyboardController = LocalSoftwareKeyboardController.current
-    val inferenceStatus by viewModel.inferenceStatus.collectAsState()
-    val pdfProcessingStatus by viewModel.pdfProcessingStatus.collectAsState()
     val conversation = viewModel.conversations.collectAsState().value.find { it.id == conversationId }
     val profiles by viewModel.profiles.collectAsState()
     val activeProfile by viewModel.activeProfile.collectAsState()
@@ -113,10 +112,14 @@ fun ChatScreen(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(conversation?.title ?: stringResource(R.string.app_name))
-                            if (inferenceStatus.isNotBlank()) {
+                            Text(
+                                text = conversation?.title ?: stringResource(R.string.app_name),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (conversation?.inferenceStatus?.isNotBlank() == true) {
                                 Text(
-                                    text = inferenceStatus,
+                                    text = conversation.inferenceStatus,
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -139,7 +142,7 @@ fun ChatScreen(
                 text = text,
                 onTextChange = { text = it },
                 selectedFileUri = selectedFileUri,
-                onFileClear = { 
+                onFileClear = {
                     viewModel.clearSelectedFile()
                     text = ""
                 },
@@ -170,7 +173,7 @@ fun ChatScreen(
                 .padding(horizontal = 8.dp)
         ) {
             item {
-                pdfProcessingStatus?.let {
+                conversation?.pdfProcessingStatus?.let {
                     PdfProcessingStatusView(status = it)
                 }
             }

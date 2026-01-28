@@ -18,7 +18,8 @@ data class OllamaProfile(
     val model: String,
     val apiKey: String,
     val apiMode: String,
-    val visionFamilies: String = "clip,vision"
+    val visionFamilies: String = "clip,vision",
+    val checkImageProcessing: Boolean = true
 )
 
 class SettingsManager(context: Context) {
@@ -34,11 +35,12 @@ class SettingsManager(context: Context) {
             name = "Default",
             apiHost = "http://192.168.10.8:11434",
             apiPath = "/api/generate",
-            psPath = "http://192.168.10.8:11434/api/ps",
+            psPath = "http://1.1.1.1:11434/api/ps",
             model = "llama2",
             apiKey = "",
             apiMode = "Ollama",
-            visionFamilies = "clip,vision,qwen2vl"
+            visionFamilies = "clip,vision,qwen2vl",
+            checkImageProcessing = true
         )
     }
 
