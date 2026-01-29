@@ -357,15 +357,17 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
         updateConversationInferenceStatus(conversationId, "PDF processing stopped.")
     }
 
-    private fun fileToBase64(uri: Uri): String? {
+    private fun imageFileToBase64(uri: Uri, quality: Int): String? {
         return try {
-            getApplication<Application>().contentResolver.openInputStream(uri)?.use { inputStream ->
-                val bytes = inputStream.readBytes()
-                Base64.encodeToString(bytes, Base64.NO_WRAP)
+            val contentResolver = getApplication<Application>().contentResolver
+            contentResolver.openInputStream(uri)?.use { inputStream ->
+                val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
+                val outputStream = ByteArrayOutputStream()
+                bitmap.compress(Bitmap.CompressFormat.JPEG, quality, outputStream)
+                Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
             }
-        } catch (e: Exception)
-        {
-            Log.e("MainViewModel", "Error converting file to Base64", e)
+        } catch (e: Exception) {
+            Log.e("MainViewModel", "Error converting image to Base64", e)
             null
         }
     }
@@ -522,7 +524,7 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                                 updateConversationPdfProcessingStatus(convId, status)
                             }
                         )
-                        pdfProcessingJobs[conversationId] = pdfProcessor.process(conversationId, copiedUri, finalPrompt)
+                        pdfProcessingJobs[conversationId] = pdfProcessor.process(conversationId, copiedUri, finalPrompt, profile.imageQuality, profile.pdfScale)
 
                         return@launch
 
@@ -530,7 +532,7 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                         fileUri = copyFileToInternalStorage(it, conversationId)
                         updateConversationInferenceStatus(conversationId, "Processing file...")
                         fileUri?.let {
-                            fileToBase64(it)?.let { base64 ->
+                            imageFileToBase64(it, profile.imageQuality)?.let { base64 ->
                                 imagesBase64 = listOf(base64)
                             }
                         }

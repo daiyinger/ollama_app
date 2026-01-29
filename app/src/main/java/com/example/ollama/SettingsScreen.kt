@@ -34,6 +34,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
@@ -62,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.ollama.ui.theme.OllamaTheme
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -86,6 +88,8 @@ fun SettingsScreen(
     var apiMode by remember(selectedProfile) { mutableStateOf(selectedProfile.apiMode) }
     var visionFamilies by remember(selectedProfile) { mutableStateOf(selectedProfile.visionFamilies) }
     var checkImageProcessing by remember(selectedProfile) { mutableStateOf(selectedProfile.checkImageProcessing) }
+    var imageQuality by remember(selectedProfile) { mutableStateOf(selectedProfile.imageQuality) }
+    var pdfScale by remember(selectedProfile) { mutableStateOf(selectedProfile.pdfScale) }
     val enableSessionLogging by viewModel.enableSessionLogging.collectAsState()
 
     var passwordVisible by remember { mutableStateOf(false) }
@@ -104,7 +108,9 @@ fun SettingsScreen(
             apiKey != selectedProfile.apiKey ||
             apiMode != selectedProfile.apiMode ||
             visionFamilies != selectedProfile.visionFamilies ||
-            checkImageProcessing != selectedProfile.checkImageProcessing
+            checkImageProcessing != selectedProfile.checkImageProcessing ||
+            imageQuality != selectedProfile.imageQuality ||
+            pdfScale != selectedProfile.pdfScale
 
     val hasOverallChanges = hasModelSettingsChanges || psPath != selectedProfile.psPath
 
@@ -117,7 +123,9 @@ fun SettingsScreen(
             apiKey = apiKey,
             apiMode = apiMode,
             visionFamilies = visionFamilies,
-            checkImageProcessing = checkImageProcessing
+            checkImageProcessing = checkImageProcessing,
+            imageQuality = imageQuality,
+            pdfScale = pdfScale
         )
         if (profiles.any { it.name == name }) {
             viewModel.updateProfile(updatedProfile)
@@ -137,7 +145,9 @@ fun SettingsScreen(
             apiKey = apiKey,
             apiMode = apiMode,
             visionFamilies = visionFamilies,
-            checkImageProcessing = checkImageProcessing
+            checkImageProcessing = checkImageProcessing,
+            imageQuality = imageQuality,
+            pdfScale = pdfScale
         )
         if (profiles.any { it.name == name }) {
             viewModel.updateProfile(updatedProfile)
@@ -409,6 +419,30 @@ fun SettingsScreen(
                             Switch(
                                 checked = checkImageProcessing,
                                 onCheckedChange = { checkImageProcessing = it }
+                            )
+                        }
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("图像质量")
+                                Text("${imageQuality}%")
+                            }
+                            Slider(
+                                value = imageQuality.toFloat(),
+                                onValueChange = { imageQuality = it.roundToInt() },
+                                valueRange = 0f..100f,
+                                steps = 100
+                            )
+                        }
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("PDF 缩放")
+                                Text("%.1fx".format(pdfScale))
+                            }
+                            Slider(
+                                value = pdfScale,
+                                onValueChange = { pdfScale = it },
+                                valueRange = 1.0f..4.0f,
+                                steps = 30
                             )
                         }
                     }

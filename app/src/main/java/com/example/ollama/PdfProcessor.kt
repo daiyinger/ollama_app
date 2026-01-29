@@ -4,6 +4,7 @@ import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Matrix
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
@@ -32,13 +33,13 @@ class PdfProcessor(
     private val onPdfProcessingStatus: (String, PdfProcessingStatus?) -> Unit
 ) {
 
-    fun process(conversationId: String, uri: Uri, prompt: String): Job {
+    fun process(conversationId: String, uri: Uri, prompt: String, imageQuality: Int, pdfScale: Float): Job {
         return coroutineScope.launch(Dispatchers.IO) {
-            processPdfPageByPage(conversationId, uri, prompt)
+            processPdfPageByPage(conversationId, uri, prompt, imageQuality, pdfScale)
         }
     }
 
-    private suspend fun saveBitmapToFile(bitmap: Bitmap, fileName: String): Uri? {
+    private suspend fun saveBitmapToFile(bitmap: Bitmap, fileName: String, imageQuality: Int): Uri? {
         return withContext(Dispatchers.IO) {
             val imageDir = File(application.filesDir, "images")
             if (!imageDir.exists()) {
@@ -47,7 +48,7 @@ class PdfProcessor(
             val imageFile = File(imageDir, fileName)
             try {
                 FileOutputStream(imageFile).use { out ->
-                    bitmap.compress(Bitmap.CompressFormat.JPEG, 100, out)
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, imageQuality, out)
                 }
                 imageFile.toUri()
             } catch (e: IOException) {
@@ -57,7 +58,7 @@ class PdfProcessor(
         }
     }
 
-    private suspend fun processPdfPageByPage(conversationId: String, uri: Uri, prompt: String) {
+    private suspend fun  processPdfPageByPage(conversationId: String, uri: Uri, prompt: String, imageQuality: Int, pdfScale: Float) {
         withContext(Dispatchers.IO) {
             var pfd: ParcelFileDescriptor? = null
             var renderer: PdfRenderer? = null
@@ -87,11 +88,15 @@ class PdfProcessor(
 
                     renderer.openPage(i)?.use { page ->
                         val bitmap = Bitmap.createBitmap(
-                            page.width,
-                            page.height,
+                            (page.width * pdfScale).toInt(),
+                            (page.height * pdfScale).toInt(),
                             Bitmap.Config.ARGB_8888
                         )
-                        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+
+                        val matrix = Matrix()
+                        matrix.postScale(pdfScale, pdfScale)
+
+                        page.render(bitmap, null, matrix, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
 
                         val newBitmap = Bitmap.createBitmap(bitmap.width, bitmap.height, bitmap.config ?: Bitmap.Config.ARGB_8888)
                         val canvas = Canvas(newBitmap)
@@ -99,10 +104,10 @@ class PdfProcessor(
                         canvas.drawBitmap(bitmap, 0f, 0f, null)
                         pageBitmap = newBitmap
 
-                        cachedImageUri = saveBitmapToFile(newBitmap, "pdf_page_${System.currentTimeMillis()}.jpg")
+                        cachedImageUri = saveBitmapToFile(newBitmap, "pdf_page_${System.currentTimeMillis()}.jpg", 100)
 
                         val outputStream = ByteArrayOutputStream()
-                        newBitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream)
+                        newBitmap.compress(Bitmap.CompressFormat.JPEG, imageQuality, outputStream)
                         val byteArray = outputStream.toByteArray()
                         imageSize = byteArray.size.toLong()
                         imageBase64 = Base64.encodeToString(byteArray, Base64.NO_WRAP)

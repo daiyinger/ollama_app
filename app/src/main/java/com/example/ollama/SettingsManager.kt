@@ -19,7 +19,9 @@ data class OllamaProfile(
     val apiKey: String,
     val apiMode: String,
     val visionFamilies: String = "clip,vision",
-    val checkImageProcessing: Boolean = true
+    val checkImageProcessing: Boolean = true,
+    val imageQuality: Int = 90,
+    val pdfScale: Float = 2.0f
 )
 
 class SettingsManager(context: Context) {
@@ -41,7 +43,9 @@ class SettingsManager(context: Context) {
             apiKey = "",
             apiMode = "Ollama",
             visionFamilies = "clip,vision,qwen2vl",
-            checkImageProcessing = true
+            checkImageProcessing = true,
+            imageQuality = 90,
+            pdfScale = 2.0f
         )
     }
 
