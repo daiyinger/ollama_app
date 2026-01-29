@@ -218,6 +218,11 @@ fun ChatScreen(
                     onMessageLongPress = {
                         messageToDelete = it
                         showDeleteDialog = true
+                    },
+                    onMessageClick = {
+                        if (conversationId != null) {
+                            viewModel.toggleMessageExpanded(conversationId, it)
+                        }
                     }
                 )
             }
@@ -462,7 +467,12 @@ fun DeleteConfirmationDialog(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun MessageBubble(message: ChatMessage, onImageClick: (Uri) -> Unit, onMessageLongPress: (ChatMessage) -> Unit) {
+fun MessageBubble(
+    message: ChatMessage,
+    onImageClick: (Uri) -> Unit,
+    onMessageLongPress: (ChatMessage) -> Unit,
+    onMessageClick: (ChatMessage) -> Unit
+) {
     val isUserMessage = message.sender.equals("You", ignoreCase = true)
     val arrangement = if (isUserMessage) Arrangement.End else Arrangement.Start
     val backgroundColor = if (isUserMessage) {
@@ -480,7 +490,7 @@ fun MessageBubble(message: ChatMessage, onImageClick: (Uri) -> Unit, onMessageLo
             shape = RoundedCornerShape(16.dp),
             color = backgroundColor,
             modifier = Modifier.combinedClickable(
-                onClick = {},
+                onClick = { onMessageClick(message) },
                 onLongClick = { onMessageLongPress(message) }
             )
         ) {
@@ -490,26 +500,36 @@ fun MessageBubble(message: ChatMessage, onImageClick: (Uri) -> Unit, onMessageLo
                         AttachmentView(uri = uri, onImageClick = onImageClick)
                     }
 
-                    val parts = message.content.split("```")
-                    if (parts.size == 1) {
-                        if (message.content.isNotBlank()) {
-                            Text(
-                                text = message.content,
-                            )
-                        }
-                    } else {
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            parts.forEachIndexed { index, part ->
-                                if (part.isNotBlank()) {
-                                    if (index % 2 == 1) { // Code block
-                                        CodeBlock(codeText = part.trim())
-                                    } else { // Normal text
-                                        Text(
-                                            text = part.trim(),
-                                        )
+                    if (message.isExpanded) {
+                        val parts = message.content.split("```")
+                        if (parts.size == 1) {
+                            if (message.content.isNotBlank()) {
+                                Text(
+                                    text = message.content,
+                                )
+                            }
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                parts.forEachIndexed { index, part ->
+                                    if (part.isNotBlank()) {
+                                        if (index % 2 == 1) { // Code block
+                                            CodeBlock(codeText = part.trim())
+                                        } else { // Normal text
+                                            Text(
+                                                text = part.trim(),
+                                            )
+                                        }
                                     }
                                 }
                             }
+                        }
+                    } else {
+                        if (message.content.isNotBlank()) {
+                            Text(
+                                text = message.content,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                     }
 

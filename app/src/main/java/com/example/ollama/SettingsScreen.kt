@@ -86,6 +86,7 @@ fun SettingsScreen(
     var apiMode by remember(selectedProfile) { mutableStateOf(selectedProfile.apiMode) }
     var visionFamilies by remember(selectedProfile) { mutableStateOf(selectedProfile.visionFamilies) }
     var checkImageProcessing by remember(selectedProfile) { mutableStateOf(selectedProfile.checkImageProcessing) }
+    val enableSessionLogging by viewModel.enableSessionLogging.collectAsState()
 
     var passwordVisible by remember { mutableStateOf(false) }
     var isApiModeExpanded by remember { mutableStateOf(false) }
@@ -418,6 +419,17 @@ fun SettingsScreen(
                     label = { Text("PS Path") },
                     modifier = Modifier.fillMaxWidth(),
                 )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(text = "启用会话日志")
+                    Switch(
+                        checked = enableSessionLogging,
+                        onCheckedChange = { viewModel.setEnableSessionLogging(it) }
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.padding(8.dp))

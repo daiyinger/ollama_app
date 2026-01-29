@@ -84,11 +84,17 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
     val profiles: StateFlow<List<OllamaProfile>> = settingsManager.getProfilesFlow()
     val activeProfile: StateFlow<OllamaProfile?> = settingsManager.getActiveProfileFlow()
 
+    private val _enableSessionLogging = MutableStateFlow(false)
+    val enableSessionLogging: StateFlow<Boolean> = _enableSessionLogging.asStateFlow()
+
     private lateinit var ollamaApi: OllamaApiService
     private lateinit var ollamaApiPs: OllamaApiService
     private val pdfProcessingJobs = mutableMapOf<String, Job>()
+    private val requestLoggingInterceptor: RequestLoggingInterceptor
 
     init {
+        requestLoggingInterceptor = RequestLoggingInterceptor(application)
+        _enableSessionLogging.value = settingsManager.getEnableSessionLogging()
         viewModelScope.launch {
             settingsManager.getActiveProfileFlow().collect { createOllamaService() }
         }
@@ -123,6 +129,7 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
 
         val okHttpClient = OkHttpClient.Builder()
             .addInterceptor(authInterceptor)
+            .addInterceptor(requestLoggingInterceptor)
             .connectTimeout(60, TimeUnit.SECONDS)
             .readTimeout(600, TimeUnit.SECONDS)
             .writeTimeout(120, TimeUnit.SECONDS)
@@ -130,6 +137,7 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
 
         val psOkHttpClient = OkHttpClient.Builder()
             .addInterceptor(authInterceptor)
+            .addInterceptor(requestLoggingInterceptor)
             .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .writeTimeout(20, TimeUnit.SECONDS)
@@ -172,6 +180,11 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
         settingsManager.setActiveProfile(profileName)
     }
 
+    fun setEnableSessionLogging(enabled: Boolean) {
+        settingsManager.setEnableSessionLogging(enabled)
+        _enableSessionLogging.value = enabled
+    }
+
     private fun loadConversations() {
         viewModelScope.launch {
             val conversationsJson = settingsManager.getConversations()
@@ -196,11 +209,13 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun createConversation(): Conversation {
-        val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+        val sdf = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault())
         val currentTime = sdf.format(Date())
+        val logTag = "chat_$currentTime"
         val newConversation = Conversation(title = "Chat $currentTime", profileName = activeProfile.value?.name)
         _conversations.value = _conversations.value + newConversation
         saveConversations()
+        requestLoggingInterceptor.logTag = logTag
         return newConversation
     }
 
@@ -255,6 +270,28 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    fun toggleMessageExpanded(conversationId: String, message: ChatMessage) {
+        val conversationIndex = _conversations.value.indexOfFirst { it.id == conversationId }
+        if (conversationIndex != -1) {
+            val updatedConversations = _conversations.value.toMutableList()
+            val oldConversation = updatedConversations[conversationIndex]
+            val messageIndex = oldConversation.messages.indexOf(message)
+            if (messageIndex != -1) {
+                val newMessages = oldConversation.messages.toMutableList()
+                val oldMessage = newMessages[messageIndex]
+                val newMessage = oldMessage.copy(isExpanded = !oldMessage.isExpanded)
+                newMessages[messageIndex] = newMessage
+                val updatedConversation = oldConversation.copy(messages = newMessages)
+                updatedConversations[conversationIndex] = updatedConversation
+                _conversations.value = updatedConversations
+                if (conversationId == _activeConversationId.value) {
+                    _messages.value = newMessages
+                }
+                saveConversations()
+            }
+        }
+    }
+
     fun renameConversation(conversationId: String, newTitle: String) {
         val conversationIndex = _conversations.value.indexOfFirst { it.id == conversationId }
         if (conversationIndex != -1) {
@@ -271,12 +308,21 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
         _activeConversationId.value = conversationId
         val conversation = _conversations.value.find { it.id == conversationId }
         if (conversation != null) {
+            val title = conversation.title
+            val timeStamp = if (title.startsWith("Chat ")) {
+                title.substringAfter("Chat ").replace(":", "-")
+            } else {
+                conversationId // Fallback to id if title format is unexpected
+            }
+            requestLoggingInterceptor.logTag = "chat_$timeStamp"
+
             _messages.value = conversation.messages
             conversation.profileName?.let {
                 settingsManager.setActiveProfile(it)
             }
         } else {
             // Handle case where conversation is not found, maybe create a new one or show an error
+            requestLoggingInterceptor.logTag = null
             _messages.value = emptyList()
         }
     }
@@ -809,7 +855,7 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
             }
 
             if (externalLogDir.exists() && externalLogDir.isDirectory) {
-                externalLogDir.listFiles { _, name -> name.endsWith(".txt") }?.let {
+                externalLogDir.listFiles { _, name -> name.endsWith(".txt") || name.endsWith(".log") }?.let {
                     files ->
                     files.forEach {
                         allLogFiles.add(LogFileInfo(it, it.length()))

@@ -30,6 +30,7 @@ class SettingsManager(context: Context) {
         const val KEY_PROFILES = "profiles"
         const val KEY_ACTIVE_PROFILE_NAME = "active_profile_name"
         const val KEY_CONVERSATIONS = "conversations"
+        const val KEY_ENABLE_SESSION_LOGGING = "enable_session_logging"
 
         val defaultProfile = OllamaProfile(
             name = "Default",
@@ -135,5 +136,13 @@ class SettingsManager(context: Context) {
 
     fun getConversations(): String {
         return prefs.getString(KEY_CONVERSATIONS, "") ?: ""
+    }
+
+    fun setEnableSessionLogging(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_ENABLE_SESSION_LOGGING, enabled).apply()
+    }
+
+    fun getEnableSessionLogging(): Boolean {
+        return prefs.getBoolean(KEY_ENABLE_SESSION_LOGGING, true)
     }
 }
