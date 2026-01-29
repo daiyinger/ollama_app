@@ -104,7 +104,7 @@ class PdfProcessor(
                         canvas.drawBitmap(bitmap, 0f, 0f, null)
                         pageBitmap = newBitmap
 
-                        cachedImageUri = saveBitmapToFile(newBitmap, "pdf_page_${System.currentTimeMillis()}.jpg", 100)
+                        cachedImageUri = saveBitmapToFile(newBitmap, "pdf_page_${System.currentTimeMillis()}.jpg", imageQuality)
 
                         val outputStream = ByteArrayOutputStream()
                         newBitmap.compress(Bitmap.CompressFormat.JPEG, imageQuality, outputStream)
