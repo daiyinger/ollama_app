@@ -17,7 +17,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -28,6 +27,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.DismissDirection
+import androidx.compose.material.DismissValue
+import androidx.compose.material.ExperimentalMaterialApi
+import androidx.compose.material.SwipeToDismiss
+import androidx.compose.material.rememberDismissState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -65,7 +69,7 @@ import kotlinx.coroutines.launch
 import java.io.OutputStream
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class)
 @Composable
 fun ChatScreen(
     viewModel: MainViewModel,
@@ -209,20 +213,50 @@ fun ChatScreen(
                     PdfProcessingStatusView(status = it)
                 }
             }
-            items(reversedMessages) { message ->
-                MessageBubble(
-                    message = message,
-                    onImageClick = { uri ->
-                        enlargedImageUri = uri
-                    },
-                    onMessageLongPress = {
-                        messageToDelete = it
-                        showDeleteDialog = true
-                    },
-                    onMessageClick = {
-                        if (conversationId != null) {
-                            viewModel.toggleMessageExpanded(conversationId, it)
+            items(reversedMessages, key = { it.id }) { message ->
+                val dismissState = rememberDismissState(
+                    confirmStateChange = {
+                        if (it == DismissValue.DismissedToStart) {
+                            messageToDelete = message
+                            showDeleteDialog = true
                         }
+                        return@rememberDismissState false
+                    }
+                )
+                SwipeToDismiss(
+                    state = dismissState,
+                    directions = setOf(DismissDirection.EndToStart),
+                    background = {
+                        val color = when (dismissState.targetValue) {
+                            DismissValue.DismissedToStart -> Color.Red.copy(alpha = 0.8f)
+                            else -> Color.Transparent
+                        }
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .background(color)
+                                .padding(horizontal = 20.dp),
+                            contentAlignment = Alignment.CenterEnd
+                        ) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "Delete Icon",
+                                tint = Color.White
+                            )
+                        }
+                    },
+                    dismissContent = {
+                        MessageBubble(
+                            message = message,
+                            onImageClick = { uri ->
+                                enlargedImageUri = uri
+                            },
+                            onMessageClick = {
+                                if (conversationId != null) {
+                                    viewModel.toggleMessageExpanded(conversationId, it)
+                                }
+                            }
+                        )
                     }
                 )
             }
@@ -470,7 +504,6 @@ fun DeleteConfirmationDialog(
 fun MessageBubble(
     message: ChatMessage,
     onImageClick: (Uri) -> Unit,
-    onMessageLongPress: (ChatMessage) -> Unit,
     onMessageClick: (ChatMessage) -> Unit
 ) {
     val isUserMessage = message.sender.equals("You", ignoreCase = true)
@@ -489,10 +522,7 @@ fun MessageBubble(
         Surface(
             shape = RoundedCornerShape(16.dp),
             color = backgroundColor,
-            modifier = Modifier.combinedClickable(
-                onClick = { onMessageClick(message) },
-                onLongClick = { onMessageLongPress(message) }
-            )
+            modifier = Modifier.clickable { onMessageClick(message) }
         ) {
             SelectionContainer {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

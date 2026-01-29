@@ -252,19 +252,24 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                 val updatedConversations = _conversations.value.toMutableList()
                 val oldConversation = updatedConversations[conversationIndex]
 
-                val newMessages = oldConversation.messages.toMutableList()
-                val wasRemoved = newMessages.remove(message)
+                // 从消息列表中根据 id 过滤掉要删除的消息
+                val originalSize = oldConversation.messages.size
+                val newMessages = oldConversation.messages.filter { it.id != message.id }
 
-                if (wasRemoved) {
+                // 检查消息是否真的被移除了
+                if (newMessages.size < originalSize) {
                     val updatedConversation = oldConversation.copy(messages = newMessages)
                     updatedConversations[conversationIndex] = updatedConversation
                     _conversations.value = updatedConversations
+
+                    // 如果删除的是当前活动对话的消息，则同时更新 _messages StateFlow
                     if (conversationId == _activeConversationId.value) {
                         _messages.value = newMessages
                     }
                     saveConversations()
+                    Log.i("MainViewModel", "Message with id ${message.id} deleted successfully.")
                 } else {
-                    Log.w("MainViewModel", "Message to delete not found in conversation.")
+                    Log.w("MainViewModel", "Message with id ${message.id} to delete not found in conversation.")
                 }
             }
         }
