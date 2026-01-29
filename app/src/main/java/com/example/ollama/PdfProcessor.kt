@@ -58,7 +58,7 @@ class PdfProcessor(
         }
     }
 
-    private suspend fun  processPdfPageByPage(conversationId: String, uri: Uri, prompt: String, imageQuality: Int, pdfScale: Float) {
+    private suspend fun processPdfPageByPage(conversationId: String, uri: Uri, prompt: String, imageQuality: Int, pdfScale: Float) {
         withContext(Dispatchers.IO) {
             var pfd: ParcelFileDescriptor? = null
             var renderer: PdfRenderer? = null
@@ -144,8 +144,13 @@ class PdfProcessor(
 
                         when (profile.apiMode) {
                             "Ollama" -> {
-                                val request = OllamaRequest(model = profile.model, prompt = pagePrompt, stream = false, images = listOf(imageBase64!!))
-                                val response = ollamaApi.generateOllama(url = url, request = request)
+                                val request = OllamaRequest(
+                                    model = profile.model,
+                                    prompt = pagePrompt,
+                                    stream = false,
+                                    images = listOf(imageBase64!!)
+                                )
+                                val response = ollamaApi.generateOllama(url = url, request = request.copy(options = mapOf("num_ctx" to profile.contextLength)))
                                 analysis = response.response
                             }
                             "OpenAI API 兼容" -> {
@@ -154,8 +159,12 @@ class PdfProcessor(
                                 val imageUrl = "data:image/jpeg;base64,$imageBase64"
                                 content.add(OpenAIImageContent(image_url = OpenAIImageUrl(url = imageUrl)))
                                 val messages = listOf(OpenAIRequestMessage(role = "user", content = content))
-                                val request = OpenAIRequest(model = profile.model, messages = messages, stream = false)
-                                val response = ollamaApi.generateOpenAI(url = url, request = request)
+                                val request = OpenAIRequest(
+                                    model = profile.model,
+                                    messages = messages,
+                                    stream = false
+                                )
+                                val response = ollamaApi.generateOpenAI(url = url, request = request.copy(max_tokens = profile.contextLength))
                                 analysis = response.choices.firstOrNull()?.message?.content ?: ""
                             }
                         }

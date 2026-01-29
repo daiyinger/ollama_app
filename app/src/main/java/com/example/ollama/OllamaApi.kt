@@ -18,7 +18,8 @@ data class OllamaRequest(
     val model: String,
     val prompt: String,
     val stream: Boolean = false,
-    val images: List<String>? = null
+    val images: List<String>? = null,
+    val options: Map<String, Int>? = null
 )
 
 /** Response from the standard Ollama API */
@@ -67,7 +68,8 @@ data class OpenAIRequestMessage(val role: String, val content: List<OpenAIConten
 data class OpenAIRequest(
     val model: String,
     val messages: List<OpenAIRequestMessage>,
-    val stream: Boolean = false
+    val stream: Boolean = false,
+    val max_tokens: Int? = null
 )
 
 // -- Response --

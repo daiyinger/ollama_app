@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -55,6 +56,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
@@ -90,6 +92,7 @@ fun SettingsScreen(
     var checkImageProcessing by remember(selectedProfile) { mutableStateOf(selectedProfile.checkImageProcessing) }
     var imageQuality by remember(selectedProfile) { mutableStateOf(selectedProfile.imageQuality) }
     var pdfScale by remember(selectedProfile) { mutableStateOf(selectedProfile.pdfScale) }
+    var contextLength by remember(selectedProfile) { mutableStateOf(selectedProfile.contextLength) }
     val enableSessionLogging by viewModel.enableSessionLogging.collectAsState()
 
     var passwordVisible by remember { mutableStateOf(false) }
@@ -110,7 +113,8 @@ fun SettingsScreen(
             visionFamilies != selectedProfile.visionFamilies ||
             checkImageProcessing != selectedProfile.checkImageProcessing ||
             imageQuality != selectedProfile.imageQuality ||
-            pdfScale != selectedProfile.pdfScale
+            pdfScale != selectedProfile.pdfScale ||
+            contextLength != selectedProfile.contextLength
 
     val hasOverallChanges = hasModelSettingsChanges || psPath != selectedProfile.psPath
 
@@ -125,7 +129,8 @@ fun SettingsScreen(
             visionFamilies = visionFamilies,
             checkImageProcessing = checkImageProcessing,
             imageQuality = imageQuality,
-            pdfScale = pdfScale
+            pdfScale = pdfScale,
+            contextLength = contextLength
         )
         if (profiles.any { it.name == name }) {
             viewModel.updateProfile(updatedProfile)
@@ -147,7 +152,8 @@ fun SettingsScreen(
             visionFamilies = visionFamilies,
             checkImageProcessing = checkImageProcessing,
             imageQuality = imageQuality,
-            pdfScale = pdfScale
+            pdfScale = pdfScale,
+            contextLength = contextLength
         )
         if (profiles.any { it.name == name }) {
             viewModel.updateProfile(updatedProfile)
@@ -403,6 +409,13 @@ fun SettingsScreen(
                             onValueChange = { model = it },
                             label = { Text(stringResource(R.string.model)) },
                             modifier = Modifier.fillMaxWidth()
+                        )
+                        TextField(
+                            value = contextLength.toString(),
+                            onValueChange = { contextLength = it.toIntOrNull() ?: 0 },
+                            label = { Text("Context Length") },
+                            modifier = Modifier.fillMaxWidth(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
                         )
                         TextField(
                             value = visionFamilies,

@@ -560,8 +560,13 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                     when (profile.apiMode) {
                         "Ollama" -> {
                             updateConversationInferenceStatus(conversationId, "Sending...")
-                            val request = OllamaRequest(model = profile.model, prompt = finalPrompt, stream = true, images = imagesBase64)
-                            val responseBody = ollamaApi.generateOllamaStream(url = url, request = request)
+                            val request = OllamaRequest(
+                                model = profile.model, 
+                                prompt = finalPrompt, 
+                                stream = true, 
+                                images = imagesBase64
+                            )
+                            val responseBody = ollamaApi.generateOllamaStream(url = url, request = request.copy(options = mapOf("num_ctx" to profile.contextLength)))
                             updateConversationInferenceStatus(conversationId, "Waiting for response...")
                             val responseStream = responseBody.byteStream().bufferedReader()
 
@@ -621,9 +626,13 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                                 content.add(OpenAIImageContent(image_url = OpenAIImageUrl(url = imageUrl)))
                             }
                             val messages = previousMessages + listOf(OpenAIRequestMessage(role = "user", content = content))
-                            val request = OpenAIRequest(model = profile.model, messages = messages, stream = true)
+                            val request = OpenAIRequest(
+                                model = profile.model, 
+                                messages = messages,
+                                stream = true
+                            )
                             updateConversationInferenceStatus(conversationId, "Sending...")
-                            val responseBody = ollamaApi.generateOpenAIStream(url = url, request = request)
+                            val responseBody = ollamaApi.generateOpenAIStream(url = url, request = request.copy(max_tokens = profile.contextLength))
                             updateConversationInferenceStatus(conversationId, "Waiting for response...")
                             val responseStream = responseBody.byteStream().bufferedReader()
 

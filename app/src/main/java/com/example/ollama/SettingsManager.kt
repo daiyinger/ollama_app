@@ -21,7 +21,8 @@ data class OllamaProfile(
     val visionFamilies: String = "clip,vision",
     val checkImageProcessing: Boolean = true,
     val imageQuality: Int = 90,
-    val pdfScale: Float = 2.0f
+    val pdfScale: Float = 2.0f,
+    val contextLength: Int = 2048
 )
 
 class SettingsManager(context: Context) {
@@ -45,7 +46,8 @@ class SettingsManager(context: Context) {
             visionFamilies = "clip,vision,qwen2vl",
             checkImageProcessing = true,
             imageQuality = 90,
-            pdfScale = 2.0f
+            pdfScale = 2.0f,
+            contextLength = 2048
         )
     }
 
@@ -63,7 +65,7 @@ class SettingsManager(context: Context) {
         } else {
             null
         }
-        if (_activeProfileFlow.value == null && profiles.isEmpty()){
+        if (_activeProfileFlow.value == null && profiles.isEmpty()) {
             val newProfiles = listOf(defaultProfile)
             saveProfiles(newProfiles)
             setActiveProfile(defaultProfile.name)
@@ -133,6 +135,7 @@ class SettingsManager(context: Context) {
     fun getModel(): String = _activeProfileFlow.value?.model ?: defaultProfile.model
     fun getApiKey(): String = _activeProfileFlow.value?.apiKey ?: defaultProfile.apiKey
     fun getApiMode(): String = _activeProfileFlow.value?.apiMode ?: defaultProfile.apiMode
+    fun getContextLength(): Int = _activeProfileFlow.value?.contextLength ?: defaultProfile.contextLength
 
     fun saveConversations(conversationsJson: String) {
         prefs.edit().putString(KEY_CONVERSATIONS, conversationsJson).apply()
