@@ -917,10 +917,18 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun listLogFiles() {
         viewModelScope.launch(Dispatchers.IO) {
+            val externalLogDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "ollama")
             val logDir = File(getApplication<Application>().getExternalFilesDir(null), "logs")
             val allLogFiles = mutableListOf<LogFileInfo>()
             if (logDir.exists() && logDir.isDirectory) {
                 logDir.listFiles { _, name -> name.endsWith(".txt") || name.endsWith(".log") }?.let { files ->
+                    files.forEach {
+                        allLogFiles.add(LogFileInfo(it, it.length()))
+                    }
+                }
+            }
+            if (externalLogDir.exists() && externalLogDir.isDirectory) {
+                externalLogDir.listFiles { _, name -> name.endsWith(".txt") || name.endsWith(".log") }?.let { files ->
                     files.forEach {
                         allLogFiles.add(LogFileInfo(it, it.length()))
                     }
