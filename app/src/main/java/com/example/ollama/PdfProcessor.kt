@@ -39,9 +39,9 @@ class PdfProcessor(
         }
     }
 
-    private suspend fun saveBitmapToFile(bitmap: Bitmap, fileName: String, imageQuality: Int): Uri? {
+    private suspend fun saveBitmapToFile(bitmap: Bitmap, fileName: String, imageQuality: Int, conversationId: String): Uri? {
         return withContext(Dispatchers.IO) {
-            val imageDir = File(application.filesDir, "images")
+            val imageDir = File(application.filesDir, "attachments/$conversationId/images")
             if (!imageDir.exists()) {
                 imageDir.mkdirs()
             }
@@ -104,7 +104,7 @@ class PdfProcessor(
                         canvas.drawBitmap(bitmap, 0f, 0f, null)
                         pageBitmap = newBitmap
 
-                        cachedImageUri = saveBitmapToFile(newBitmap, "pdf_page_${System.currentTimeMillis()}.jpg", imageQuality)
+                        cachedImageUri = saveBitmapToFile(newBitmap, "pdf_page_${System.currentTimeMillis()}.jpg", imageQuality, conversationId)
 
                         val outputStream = ByteArrayOutputStream()
                         newBitmap.compress(Bitmap.CompressFormat.JPEG, imageQuality, outputStream)
@@ -136,7 +136,12 @@ class PdfProcessor(
                         continue
                     }
 
-                    val pagePrompt = "The following image is a page from a document. Please identify the text on this page and return the recognized result. User prompt: '$prompt'"
+                    val pagePrompt = if (prompt.isNotBlank()) {
+                        "The following image is a page from a document. Please identify the text on this page and return the recognized result. User prompt: '$prompt'"
+                    } else {
+                        "The following image is a page from a document. Please identify the text on this page and return the recognized result."
+                    }
+
                     try {
                         val profile = activeProfile ?: return@withContext
                         val url = profile.apiHost.removeSuffix("/") + "/" + profile.apiPath.removePrefix("/")

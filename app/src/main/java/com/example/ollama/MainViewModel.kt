@@ -874,7 +874,7 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                 }
                 val logDir = File(getApplication<Application>().getExternalFilesDir(null), "logs")
                 if (!logDir.exists()) { logDir.mkdirs() }
-                val logFile = File(logDir, "ollama_log.txt")
+                val logFile = File(logDir, "ollama_ps_log.txt")
                 logFile.appendText("${getCurrentTimestamp()} - Request: GET $url\n")
                 val response = ollamaApiPs.getRunningModels(url = url)
                 logFile.appendText("${getCurrentTimestamp()} - Response: ${json.encodeToString(response)}\n")
@@ -905,7 +905,7 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                 }
                 val logDir = File(getApplication<Application>().getExternalFilesDir(null), "logs")
                 if (!logDir.exists()) { logDir.mkdirs() }
-                val logFile = File(logDir, "ollama_log.txt")
+                val logFile = File(logDir, "ollama_ps_log.txt")
                 logFile.appendText("${getCurrentTimestamp()} - Error fetching running models: $errorMessage\n")
             }
         }
