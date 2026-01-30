@@ -185,6 +185,15 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
         _enableSessionLogging.value = enabled
     }
 
+    fun exportSettings(): String {
+        return settingsManager.exportSettings()
+    }
+
+    fun importSettings(settingsJson: String) {
+        settingsManager.importSettings(settingsJson)
+        _enableSessionLogging.value = settingsManager.getEnableSessionLogging()
+    }
+
     private fun loadConversations() {
         viewModelScope.launch {
             val conversationsJson = settingsManager.getConversations()

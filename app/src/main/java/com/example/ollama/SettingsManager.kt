@@ -2,6 +2,7 @@ package com.example.ollama
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -23,6 +24,13 @@ data class OllamaProfile(
     val imageQuality: Int = 90,
     val pdfScale: Float = 2.0f,
     val contextLength: Int = 2048
+)
+
+@Serializable
+data class AppSettings(
+    val profiles: List<OllamaProfile>,
+    val activeProfileName: String?,
+    val enableSessionLogging: Boolean
 )
 
 class SettingsManager(context: Context) {
@@ -89,8 +97,8 @@ class SettingsManager(context: Context) {
     }
 
     fun saveProfiles(profiles: List<OllamaProfile>) {
-        val json = json.encodeToString(profiles)
-        prefs.edit().putString(KEY_PROFILES, json).apply()
+        val jsonString = json.encodeToString(profiles)
+        prefs.edit().putString(KEY_PROFILES, jsonString).apply()
         _profilesFlow.value = profiles
     }
 
@@ -151,5 +159,41 @@ class SettingsManager(context: Context) {
 
     fun getEnableSessionLogging(): Boolean {
         return prefs.getBoolean(KEY_ENABLE_SESSION_LOGGING, true)
+    }
+
+    fun exportSettings(): String {
+        val profiles = getProfiles()
+        val activeProfileName = prefs.getString(KEY_ACTIVE_PROFILE_NAME, null)
+        val enableSessionLogging = getEnableSessionLogging()
+
+        val appSettings = AppSettings(
+            profiles = profiles,
+            activeProfileName = activeProfileName,
+            enableSessionLogging = enableSessionLogging
+        )
+        return json.encodeToString(appSettings)
+    }
+
+    fun importSettings(settingsJson: String) {
+        try {
+            val appSettings = json.decodeFromString<AppSettings>(settingsJson)
+            saveProfiles(appSettings.profiles)
+            setActiveProfile(appSettings.activeProfileName)
+            setEnableSessionLogging(appSettings.enableSessionLogging)
+
+            // After import, we need to reload the profiles and active profile.
+            val profiles = getProfiles()
+            _profilesFlow.value = profiles
+            val activeProfileName = prefs.getString(KEY_ACTIVE_PROFILE_NAME, null)
+            _activeProfileFlow.value = if (activeProfileName != null) {
+                profiles.find { it.name == activeProfileName }
+            } else if (profiles.isNotEmpty()) {
+                profiles.first()
+            } else {
+                null
+            }
+        } catch (e: Exception) {
+            Log.e("SettingsManager", "Error importing settings", e)
+        }
     }
 }

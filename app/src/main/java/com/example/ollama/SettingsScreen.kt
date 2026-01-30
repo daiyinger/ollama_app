@@ -1,6 +1,10 @@
 package com.example.ollama
 
 import android.app.Application
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -65,6 +69,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.ollama.ui.theme.OllamaTheme
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.io.OutputStreamWriter
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -99,6 +106,70 @@ fun SettingsScreen(
     var isApiModeExpanded by remember { mutableStateOf(false) }
     var isProfileSelectorExpended by remember { mutableStateOf(false) }
     var showConfirmDialog by remember { mutableStateOf(false) }
+    var showImportConfirmDialog by remember { mutableStateOf<String?>(null) }
+
+    val context = LocalContext.current
+
+    val createDocumentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json"),
+        onResult = { uri: Uri? ->
+            uri?.let {
+                try {
+                    val settingsJson = viewModel.exportSettings()
+                    context.contentResolver.openOutputStream(it)?.use { outputStream ->
+                        OutputStreamWriter(outputStream).use { writer ->
+                            writer.write(settingsJson)
+                        }
+                    }
+                    Toast.makeText(context, "Settings exported successfully", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Failed to export settings", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    )
+
+    val openDocumentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+        onResult = { uri: Uri? ->
+            uri?.let {
+                try {
+                    context.contentResolver.openInputStream(it)?.use { inputStream ->
+                        BufferedReader(InputStreamReader(inputStream)).use { reader ->
+                            val settingsJson = reader.readText()
+                            showImportConfirmDialog = settingsJson
+                        }
+                    }
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Failed to read settings file", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    )
+
+    if (showImportConfirmDialog != null) {
+        AlertDialog(
+            onDismissRequest = { showImportConfirmDialog = null },
+            title = { Text("Confirm Import") },
+            text = { Text("This will overwrite your current settings. Are you sure you want to continue?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showImportConfirmDialog?.let { settingsJson ->
+                            viewModel.importSettings(settingsJson)
+                            Toast.makeText(context, "Settings imported successfully", Toast.LENGTH_SHORT).show()
+                        }
+                        showImportConfirmDialog = null
+                    }
+                ) { Text("Import") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showImportConfirmDialog = null }
+                ) { Text("Cancel") }
+            }
+        )
+    }
 
     val ollamaMode = stringResource(R.string.ollama)
     val openAiMode = stringResource(R.string.openai_compatible)
@@ -201,7 +272,9 @@ fun SettingsScreen(
             onDismissRequest = { showLogFilesDialog = false },
             properties = DialogProperties(usePlatformDefaultWidth = false)
         ) {
-            Surface(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            Surface(modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)) {
                 LazyColumn {
                     items(logFiles, key = { it.file.absolutePath }) { logFileInfo ->
                         val dismissState = rememberSwipeToDismissBoxState(
@@ -481,6 +554,24 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.padding(8.dp))
 
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = { openDocumentLauncher.launch(arrayOf("application/json")) },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Import Settings")
+                }
+                Button(
+                    onClick = { createDocumentLauncher.launch("ollama_settings.json") },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Export Settings")
+                }
+            }
+            Spacer(modifier = Modifier.padding(4.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
