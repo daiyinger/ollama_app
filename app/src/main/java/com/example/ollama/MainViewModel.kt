@@ -43,6 +43,7 @@ import java.util.concurrent.TimeUnit
 
 data class RunningModelDisplayInfo(val name: String, val expirationTime: String)
 data class LogFileInfo(val file: File, val size: Long)
+data class CopiedFile(val uri: Uri, val fileName: String)
 
 @kotlinx.serialization.Serializable
 data class PdfProcessingStatus(
@@ -330,7 +331,16 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
             }
             requestLoggingInterceptor.logTag = "chat_$timeStamp"
 
-            _messages.value = conversation.messages
+            _messages.value = conversation.messages.map { message ->
+                // Check if the file for the message's URI is accessible
+                message.fileUri?.let {
+                    if (!isUriAccessible(it)) {
+                        // If the URI is not accessible, create a new message with a null fileUri
+                        return@map message.copy(fileUri = null)
+                    }
+                }
+                message
+            }
             conversation.profileName?.let {
                 settingsManager.setActiveProfile(it)
             }
@@ -338,6 +348,15 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
             // Handle case where conversation is not found, maybe create a new one or show an error
             requestLoggingInterceptor.logTag = null
             _messages.value = emptyList()
+        }
+    }
+
+    private fun isUriAccessible(uri: Uri): Boolean {
+        return try {
+            getApplication<Application>().contentResolver.openInputStream(uri)?.use { it.close() }
+            true
+        } catch (e: Exception) {
+            false
         }
     }
 
@@ -397,23 +416,28 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    private suspend fun copyFileToInternalStorage(uri: Uri, conversationId: String): Uri? {
+    private fun getFileName(uri: Uri): String {
+        var fileName = "temp_file"
+        val cursor: Cursor? = getApplication<Application>().contentResolver.query(uri, null, null, null, null)
+        cursor?.use {
+            if (it.moveToFirst()) {
+                val nameIndex = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (nameIndex != -1) {
+                    fileName = it.getString(nameIndex)
+                }
+            }
+        }
+        return fileName
+    }
+
+    private suspend fun copyFileToInternalStorage(uri: Uri, conversationId: String): CopiedFile? {
         return withContext(Dispatchers.IO) {
             try {
                 val application = getApplication<Application>()
                 val contentResolver = application.contentResolver
 
                 // Get original file name
-                var fileName = "temp_file"
-                val cursor: Cursor? = contentResolver.query(uri, null, null, null, null)
-                cursor?.use {
-                    if (it.moveToFirst()) {
-                        val nameIndex = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                        if (nameIndex != -1) {
-                            fileName = it.getString(nameIndex)
-                        }
-                    }
-                }
+                val fileName = getFileName(uri)
 
                 // Create a conversation-specific directory
                 val conversationDir = File(application.filesDir, "attachments/$conversationId")
@@ -431,8 +455,8 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                 }
 
-                // Return the URI of the new file
-                newFile.toUri()
+                // Return the URI and file name of the new file
+                CopiedFile(newFile.toUri(), fileName)
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Error copying file to internal storage", e)
                 null
@@ -460,16 +484,20 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
             val conversation = _conversations.value.find { it.id == conversationId }
             if (conversation == null) return@launch
 
-            var fileUri = _selectedFileUri.value
+            var userFileUri = _selectedFileUri.value
+            var userFileName: String? = null
+            var userFileMimeType: String? = null
             var imagesBase64: List<String>? = null
             var finalPrompt = prompt
 
             val profile = profiles.value.find { it.name == conversation.profileName } ?: activeProfile.value
 
-            fileUri?.let {
-                val mimeType = getApplication<Application>().contentResolver.getType(it)
+            userFileUri?.let { uri ->
+                userFileMimeType = getApplication<Application>().contentResolver.getType(uri)
+                userFileName = getFileName(uri)
+
                 if (profile != null) {
-                    if (mimeType == "application/pdf") {
+                    if (userFileMimeType == "application/pdf") {
                         var isVisionModel = false
                         if (profile.checkImageProcessing) {
                             updateConversationInferenceStatus(conversationId, "Checking model...")
@@ -484,7 +512,6 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                             withContext(Dispatchers.IO) {
                                 Log.i("MainViewModel", "Model Details: $modelDetails")
                                 val logDir = File(getApplication<Application>().getExternalFilesDir(null), "logs")
-                                // 如果目录不存在，则创建它
                                 if (!logDir.exists()) {
                                     logDir.mkdirs()
                                 }
@@ -508,8 +535,8 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                         }
 
                         updateConversationInferenceStatus(conversationId, "Processing PDF...")
-                        val copiedUri = copyFileToInternalStorage(it, conversationId)
-                        if (copiedUri == null) {
+                        val copiedFile = copyFileToInternalStorage(uri, conversationId)
+                        if (copiedFile == null) {
                             addMessageToConversation(
                                 conversationId,
                                 ChatMessage(sender = "Error", content = "Failed to save the PDF file for processing.")
@@ -517,8 +544,16 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                             updateConversationInferenceStatus(conversationId, "Error")
                             return@launch
                         }
+                        userFileUri = copiedFile.uri
+                        userFileName = copiedFile.fileName
 
-                        val userMessage = ChatMessage(sender = "You", content = finalPrompt, fileUri = copiedUri)
+                        val userMessage = ChatMessage(
+                            sender = "You",
+                            content = finalPrompt,
+                            fileUri = userFileUri,
+                            fileName = userFileName,
+                            fileMimeType = userFileMimeType
+                        )
                         addMessageToConversation(conversationId, userMessage)
                         _selectedFileUri.value = null
 
@@ -538,29 +573,40 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                                 updateConversationPdfProcessingStatus(convId, status)
                             }
                         )
-                        pdfProcessingJobs[conversationId] = pdfProcessor.process(conversationId, copiedUri, finalPrompt, profile.imageQuality, profile.pdfScale)
+                        pdfProcessingJobs[conversationId] = pdfProcessor.process(conversationId, userFileUri!!, finalPrompt, profile.imageQuality, profile.pdfScale)
 
                         return@launch
-
-                    } else if (mimeType?.startsWith("image/") == true) {
-                        fileUri = copyFileToInternalStorage(it, conversationId)
-                        updateConversationInferenceStatus(conversationId, "Processing file...")
-                        fileUri?.let {
-                            imageFileToBase64(it, profile.imageQuality)?.let { base64 ->
+                    } else if (userFileMimeType?.startsWith("image/") == true) {
+                        val copiedFile = copyFileToInternalStorage(uri, conversationId)
+                        if (copiedFile != null) {
+                            userFileUri = copiedFile.uri
+                            userFileName = copiedFile.fileName
+                            imageFileToBase64(copiedFile.uri, profile.imageQuality)?.let { base64 ->
                                 imagesBase64 = listOf(base64)
                             }
+                        } else {
+                            userFileUri = null
                         }
-                    } else if (mimeType != null && mimeType.startsWith("text/")) {
-                        fileUri = copyFileToInternalStorage(it, conversationId)
-                        updateConversationInferenceStatus(conversationId, "Processing file...")
-                        readFileContent(it)?.let { content ->
-                            finalPrompt = "$prompt\n\n--- Document Content ---\n$content"
+                    } else {
+                        userFileName?.let {
+                            finalPrompt = "$prompt\n\n--- Attached File ---\n$it"
+                        }
+                        if (userFileMimeType?.startsWith("text/") == true) {
+                            readFileContent(uri)?.let { content ->
+                                finalPrompt = "$prompt\n\n--- Document Content ---\n$content"
+                            }
                         }
                     }
                 }
             }
 
-            val userMessage = ChatMessage(sender = "You", content = finalPrompt, fileUri = fileUri)
+            val userMessage = ChatMessage(
+                sender = "You",
+                content = finalPrompt,
+                fileUri = userFileUri,
+                fileName = userFileName,
+                fileMimeType = userFileMimeType
+            )
             addMessageToConversation(conversationId, userMessage)
 
             _selectedFileUri.value = null
@@ -575,9 +621,9 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                         "Ollama" -> {
                             updateConversationInferenceStatus(conversationId, "Sending...")
                             val request = OllamaRequest(
-                                model = profile.model, 
-                                prompt = finalPrompt, 
-                                stream = true, 
+                                model = profile.model,
+                                prompt = finalPrompt,
+                                stream = true,
                                 images = imagesBase64
                             )
                             val responseBody = ollamaApi.generateOllamaStream(url = url, request = request.copy(options = mapOf("num_ctx" to profile.contextLength)))
@@ -641,7 +687,7 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                             }
                             val messages = previousMessages + listOf(OpenAIRequestMessage(role = "user", content = content))
                             val request = OpenAIRequest(
-                                model = profile.model, 
+                                model = profile.model,
                                 messages = messages,
                                 stream = true
                             )

@@ -14,6 +14,7 @@ data class ChatMessage(
     @Serializable(with = UriSerializer::class)
     val fileUri: Uri? = null,
     val fileMimeType: String? = null,
+    val fileName: String? = null,
     val performance: String? = null,
     val isExpanded: Boolean = true,
     @Transient

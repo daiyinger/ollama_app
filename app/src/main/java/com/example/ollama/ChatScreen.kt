@@ -437,26 +437,46 @@ fun CodeBlock(codeText: String) {
 }
 
 @Composable
-fun AttachmentView(uri: Uri, onImageClick: (Uri) -> Unit) {
+fun AttachmentView(message: ChatMessage, onImageClick: (Uri) -> Unit) {
     val context = LocalContext.current
-    val mimeType = remember(uri) { getMimeType(context, uri) }
 
-    if (mimeType?.startsWith("image/") == true) {
-        Log.i("ChatScreen", "AttachmentView is image: $uri")
-        AsyncImage(
-            model = uri,
-            contentDescription = "Selected file",
-            modifier = Modifier
-                .size(150.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .clickable { onImageClick(uri) },
-            contentScale = ContentScale.Crop
-        )
-    } else {
-        Log.i("ChatScreen", "AttachmentView is not image: $uri, mimeType: $mimeType")
-        val isPdf = mimeType == "application/pdf"
-        val icon = if (isPdf) Icons.Default.PictureAsPdf else Icons.Default.AttachFile
-        val description = if (isPdf) "PDF attachment" else "File attachment"
+    if (message.fileUri != null && isUriAccessible(context, message.fileUri)) {
+        val mimeType = message.fileMimeType ?: getMimeType(context, message.fileUri)
+        if (mimeType?.startsWith("image/") == true) {
+            Log.i("ChatScreen", "AttachmentView is image: ${message.fileUri}")
+            AsyncImage(
+                model = message.fileUri,
+                contentDescription = "Selected file",
+                modifier = Modifier
+                    .size(150.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { onImageClick(message.fileUri) },
+                contentScale = ContentScale.Crop
+            )
+        } else {
+            val isPdf = mimeType == "application/pdf"
+            val icon = if (isPdf) Icons.Default.PictureAsPdf else Icons.Default.AttachFile
+            val description = if (isPdf) "PDF attachment" else "File attachment"
+            Row(
+                modifier = Modifier
+                    .padding(8.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(icon, contentDescription = description)
+                Text(
+                    text = message.fileName ?: getFileName(context, message.fileUri),
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    } else if (message.fileName != null) {
+        // Fallback to showing just the file name if URI is null or inaccessible
         Row(
             modifier = Modifier
                 .padding(8.dp)
@@ -466,9 +486,9 @@ fun AttachmentView(uri: Uri, onImageClick: (Uri) -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Icon(icon, contentDescription = description)
+            Icon(Icons.Default.AttachFile, contentDescription = "File attachment")
             Text(
-                text = getFileName(context, uri),
+                text = message.fileName,
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
@@ -526,9 +546,7 @@ fun MessageBubble(
         ) {
             SelectionContainer {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    message.fileUri?.let { uri ->
-                        AttachmentView(uri = uri, onImageClick = onImageClick)
-                    }
+                    AttachmentView(message = message, onImageClick = onImageClick)
 
                     if (message.isExpanded) {
                         val parts = message.content.split("```")
@@ -766,6 +784,15 @@ fun getFileName(context: Context, uri: Uri): String {
     } catch (e: Exception) {
         // 解码失败时返回原始文件名或默认值
         fileName ?: "unknown_file"
+    }
+}
+
+fun isUriAccessible(context: Context, uri: Uri): Boolean {
+    return try {
+        context.contentResolver.openInputStream(uri)?.use { it.close() }
+        true
+    } catch (e: Exception) {
+        false
     }
 }
 
