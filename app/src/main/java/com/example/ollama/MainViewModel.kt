@@ -483,7 +483,7 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
 
                             withContext(Dispatchers.IO) {
                                 Log.i("MainViewModel", "Model Details: $modelDetails")
-                                val logDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "ollama")
+                                val logDir = File(getApplication<Application>().getExternalFilesDir(null), "logs")
                                 // 如果目录不存在，则创建它
                                 if (!logDir.exists()) {
                                     logDir.mkdirs()
@@ -826,7 +826,8 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                 } else {
                     "http://$psPath"
                 }
-                val logDir = getApplication<Application>().filesDir
+                val logDir = File(getApplication<Application>().getExternalFilesDir(null), "logs")
+                if (!logDir.exists()) { logDir.mkdirs() }
                 val logFile = File(logDir, "ollama_log.txt")
                 logFile.appendText("${getCurrentTimestamp()} - Request: GET $url\n")
                 val response = ollamaApiPs.getRunningModels(url = url)
@@ -856,7 +857,8 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                 withContext(Dispatchers.Main) {
                     _runningModelsError.value = errorMessage
                 }
-                val logDir = getApplication<Application>().filesDir
+                val logDir = File(getApplication<Application>().getExternalFilesDir(null), "logs")
+                if (!logDir.exists()) { logDir.mkdirs() }
                 val logFile = File(logDir, "ollama_log.txt")
                 logFile.appendText("${getCurrentTimestamp()} - Error fetching running models: $errorMessage\n")
             }
@@ -869,25 +871,16 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun listLogFiles() {
         viewModelScope.launch(Dispatchers.IO) {
-            val internalLogDir = getApplication<Application>().filesDir
-            val internalLogFile = File(internalLogDir, "ollama_log.txt")
-
-            val externalLogDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "ollama")
-
+            val logDir = File(getApplication<Application>().getExternalFilesDir(null), "logs")
             val allLogFiles = mutableListOf<LogFileInfo>()
-            if (internalLogFile.exists()) {
-                allLogFiles.add(LogFileInfo(internalLogFile, internalLogFile.length()))
-            }
-
-            if (externalLogDir.exists() && externalLogDir.isDirectory) {
-                externalLogDir.listFiles { _, name -> name.endsWith(".txt") || name.endsWith(".log") }?.let {
-                    files ->
+            if (logDir.exists() && logDir.isDirectory) {
+                logDir.listFiles { _, name -> name.endsWith(".txt") || name.endsWith(".log") }?.let { files ->
                     files.forEach {
                         allLogFiles.add(LogFileInfo(it, it.length()))
                     }
                 }
             }
-            _logFiles.value = allLogFiles
+            _logFiles.value = allLogFiles.sortedByDescending { it.file.lastModified() }
         }
     }
 
