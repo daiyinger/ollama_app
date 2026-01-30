@@ -136,10 +136,11 @@ class PdfProcessor(
                         continue
                     }
 
+                    val basePrompt = activeProfile?.pagePrompt ?: SettingsManager.defaultProfile.pagePrompt
                     val pagePrompt = if (prompt.isNotBlank()) {
-                        "The following image is a page from a document. Please identify the text on this page and return the recognized result. User prompt: '$prompt'"
+                        "$basePrompt User prompt: '$prompt'"
                     } else {
-                        "The following image is a page from a document. Please identify the text on this page and return the recognized result."
+                        basePrompt
                     }
 
                     try {

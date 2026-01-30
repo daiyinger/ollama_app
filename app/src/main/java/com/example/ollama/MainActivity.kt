@@ -56,11 +56,18 @@ class MainActivity : ComponentActivity() {
                                 viewModel = viewModel,
                                 onNavigateBack = { navController.popBackStack() },
                                 onNavigateToLog = { navController.navigate("logViewer") },
+                                onNavigateToEditPagePrompt = { navController.navigate("editPagePrompt") },
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
                         composable("logViewer") {
                             LogViewerScreen(
+                                viewModel = viewModel,
+                                onNavigateBack = { navController.popBackStack() }
+                            )
+                        }
+                        composable("editPagePrompt") {
+                            EditPagePromptScreen(
                                 viewModel = viewModel,
                                 onNavigateBack = { navController.popBackStack() }
                             )

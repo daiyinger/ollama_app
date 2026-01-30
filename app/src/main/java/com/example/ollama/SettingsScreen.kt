@@ -80,6 +80,7 @@ fun SettingsScreen(
     viewModel: MainViewModel,
     onNavigateBack: () -> Unit,
     onNavigateToLog: () -> Unit,
+    onNavigateToEditPagePrompt: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val profiles by viewModel.profiles.collectAsState()
@@ -533,6 +534,21 @@ fun SettingsScreen(
                         }
                     }
                 }
+                Card(
+                    modifier = Modifier.fillMaxWidth().clickable { onNavigateToEditPagePrompt() },
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Text(text = "编辑页面提示", style = MaterialTheme.typography.titleMedium)
+                        TextField(
+                            value = activeProfile?.pagePrompt ?: "",
+                            onValueChange = {},
+                            label = { Text("Page Prompt") },
+                            modifier = Modifier.fillMaxWidth(),
+                            readOnly = true,
+                            maxLines = 3
+                        )
+                    }
+                }
                 TextField(
                     value = psPath,
                     onValueChange = { psPath = it },
@@ -603,7 +619,8 @@ fun SettingsScreenPreview() {
         SettingsScreen(
             viewModel = MainViewModel(LocalContext.current.applicationContext as Application),
             onNavigateBack = {},
-            onNavigateToLog = {}
+            onNavigateToLog = {},
+            onNavigateToEditPagePrompt = {}
         )
     }
 }

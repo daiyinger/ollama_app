@@ -173,6 +173,13 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
         settingsManager.updateProfile(profile.copy(apiHost = hostWithScheme))
     }
 
+    fun setPagePrompt(pagePrompt: String) {
+        activeProfile.value?.let {
+            val updatedProfile = it.copy(pagePrompt = pagePrompt)
+            settingsManager.updateProfile(updatedProfile)
+        }
+    }
+
     fun deleteProfile(profileName: String) {
         settingsManager.deleteProfile(profileName)
     }

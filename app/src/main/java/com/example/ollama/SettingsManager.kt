@@ -23,7 +23,8 @@ data class OllamaProfile(
     val checkImageProcessing: Boolean = true,
     val imageQuality: Int = 90,
     val pdfScale: Float = 2.0f,
-    val contextLength: Int = 2048
+    val contextLength: Int = 2048,
+    val pagePrompt: String = "The following image is a page from a document. Please identify the text on this page and return the recognized result."
 )
 
 @Serializable
@@ -55,7 +56,8 @@ class SettingsManager(context: Context) {
             checkImageProcessing = true,
             imageQuality = 90,
             pdfScale = 2.0f,
-            contextLength = 2048
+            contextLength = 2048,
+            pagePrompt = "The following image is a page from a document. Please identify the text on this page and return the recognized result."
         )
     }
 
@@ -144,6 +146,8 @@ class SettingsManager(context: Context) {
     fun getApiKey(): String = _activeProfileFlow.value?.apiKey ?: defaultProfile.apiKey
     fun getApiMode(): String = _activeProfileFlow.value?.apiMode ?: defaultProfile.apiMode
     fun getContextLength(): Int = _activeProfileFlow.value?.contextLength ?: defaultProfile.contextLength
+    
+    fun getPagePrompt(): String = _activeProfileFlow.value?.pagePrompt ?: defaultProfile.pagePrompt
 
     fun saveConversations(conversationsJson: String) {
         prefs.edit().putString(KEY_CONVERSATIONS, conversationsJson).apply()
