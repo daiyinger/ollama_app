@@ -46,6 +46,18 @@ data class LogFileInfo(val file: File, val size: Long)
 data class CopiedFile(val uri: Uri, val fileName: String)
 
 @kotlinx.serialization.Serializable
+data class OllamaModel(
+    val name: String,
+    val modified_at: String,
+    val size: Long
+)
+
+@kotlinx.serialization.Serializable
+data class OllamaModelsList(
+    val models: List<OllamaModel>
+)
+
+@kotlinx.serialization.Serializable
 data class PdfProcessingStatus(
     val currentPage: Int,
     val totalPages: Int,
@@ -70,6 +82,12 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val _runningModelsError = MutableStateFlow<String?>(null)
     val runningModelsError: StateFlow<String?> = _runningModelsError.asStateFlow()
+
+    private val _ollamaModels = MutableStateFlow<List<OllamaModel>>(emptyList())
+    val ollamaModels: StateFlow<List<OllamaModel>> = _ollamaModels.asStateFlow()
+
+    private val _ollamaModelsError = MutableStateFlow<String?>(null)
+    val ollamaModelsError: StateFlow<String?> = _ollamaModelsError.asStateFlow()
 
     private val _logContent = MutableStateFlow("")
     val logContent: StateFlow<String> = _logContent.asStateFlow()
@@ -920,6 +938,39 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun clearRunningModelsError() {
         _runningModelsError.value = null
+    }
+
+    fun listOllamaModels() {
+        viewModelScope.launch(Dispatchers.IO) {
+            withContext(Dispatchers.Main) {
+                _ollamaModels.value = emptyList()
+                _ollamaModelsError.value = "Loading..."
+            }
+            try {
+                val profile = activeProfile.value ?: return@launch
+                val url = if (profile.tagsPath.isNotBlank()) {
+                    profile.tagsPath
+                } else {
+                    profile.apiHost.removeSuffix("/") + "/api/tags"
+                }
+                val response = ollamaApi.listOllamaModels(url = url)
+
+                withContext(Dispatchers.Main) {
+                    _ollamaModels.value = response.models
+                    _ollamaModelsError.value = null
+                }
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error listing ollama models", e)
+                val errorMessage = e.message ?: "Unknown error listing ollama models"
+                withContext(Dispatchers.Main) {
+                    _ollamaModelsError.value = errorMessage
+                }
+            }
+        }
+    }
+
+    fun clearOllamaModelsError() {
+        _ollamaModelsError.value = null
     }
 
     fun listLogFiles() {

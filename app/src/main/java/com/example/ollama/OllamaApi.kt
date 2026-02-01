@@ -177,4 +177,8 @@ interface OllamaApiService {
     /** Show model information */
     @POST
     suspend fun show(@Url url: String, @Body request: ShowRequest): ShowResponse
+
+    /** List ollama models */
+    @GET
+    suspend fun listOllamaModels(@Url url: String): OllamaModelsList
 }

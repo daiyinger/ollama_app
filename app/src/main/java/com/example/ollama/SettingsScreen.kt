@@ -93,6 +93,7 @@ fun SettingsScreen(
     var apiHost by remember(selectedProfile) { mutableStateOf(selectedProfile.apiHost) }
     var apiPath by remember(selectedProfile) { mutableStateOf(selectedProfile.apiPath) }
     var psPath by remember(selectedProfile) { mutableStateOf(selectedProfile.psPath) }
+    var tagsPath by remember(selectedProfile) { mutableStateOf(selectedProfile.tagsPath) }
     var model by remember(selectedProfile) { mutableStateOf(selectedProfile.model) }
     var apiKey by remember(selectedProfile) { mutableStateOf(selectedProfile.apiKey) }
     var apiMode by remember(selectedProfile) { mutableStateOf(selectedProfile.apiMode) }
@@ -188,7 +189,7 @@ fun SettingsScreen(
             pdfScale != selectedProfile.pdfScale ||
             contextLength != selectedProfile.contextLength
 
-    val hasOverallChanges = hasModelSettingsChanges || psPath != selectedProfile.psPath
+    val hasOverallChanges = hasModelSettingsChanges || psPath != selectedProfile.psPath || tagsPath != selectedProfile.tagsPath
 
     val saveModelSettings = {
         val updatedProfile = selectedProfile.copy(
@@ -218,6 +219,7 @@ fun SettingsScreen(
             apiHost = apiHost,
             apiPath = apiPath,
             psPath = psPath,
+            tagsPath = tagsPath,
             model = model,
             apiKey = apiKey,
             apiMode = apiMode,
@@ -553,6 +555,12 @@ fun SettingsScreen(
                     value = psPath,
                     onValueChange = { psPath = it },
                     label = { Text("PS Path") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                TextField(
+                    value = tagsPath,
+                    onValueChange = { tagsPath = it },
+                    label = { Text("Tags Path") },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Row(

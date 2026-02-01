@@ -5,6 +5,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.scrollable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,9 +18,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Task
 import androidx.compose.material3.AlertDialog
@@ -62,8 +67,11 @@ fun ConversationHistoryScreen(
     val conversations by viewModel.conversations.collectAsState()
     val runningModels by viewModel.runningModels.collectAsState()
     val runningModelsError by viewModel.runningModelsError.collectAsState()
+    val ollamaModels by viewModel.ollamaModels.collectAsState()
+    val ollamaModelsError by viewModel.ollamaModelsError.collectAsState()
     var showRenameDialog by remember { mutableStateOf<Conversation?>(null) }
     var showRunningModelsDialog by remember { mutableStateOf(false) }
+    var showOllamaModelsDialog by remember { mutableStateOf(false) }
     var showExitDialog by remember { mutableStateOf(false) }
     val activity = (LocalContext.current as? Activity)
 
@@ -84,6 +92,17 @@ fun ConversationHistoryScreen(
             onDismiss = {
                 showRunningModelsDialog = false
                 viewModel.clearRunningModelsError()
+            }
+        )
+    }
+
+    if (showOllamaModelsDialog) {
+        OllamaModelsDialog(
+            ollamaModels = ollamaModels,
+            error = ollamaModelsError,
+            onDismiss = {
+                showOllamaModelsDialog = false
+                viewModel.clearOllamaModelsError()
             }
         )
     }
@@ -115,6 +134,12 @@ fun ConversationHistoryScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.app_name)) },
                 actions = {
+                    IconButton(onClick = {
+                        viewModel.listOllamaModels()
+                        showOllamaModelsDialog = true
+                    }) {
+                        Icon(Icons.Default.Search, contentDescription = "List Ollama Models")
+                    }
                     IconButton(onClick = {
                         viewModel.fetchRunningModels()
                         showRunningModelsDialog = true
@@ -311,6 +336,78 @@ fun RunningModelsDialog(
                             )
                             Spacer(modifier = Modifier.width(16.dp))
                             Text(text = model.expirationTime)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss) {
+                Text("OK")
+            }
+        }
+    )
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun OllamaModelsDialog(
+    ollamaModels: List<OllamaModel>,
+    error: String?,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        modifier = Modifier.fillMaxWidth(0.95f),
+        title = { Text("Ollama Models") },
+        text = {
+            if (error == "Loading...") {
+                CircularProgressIndicator()
+            } else if (error != null) {
+                Text(error)
+            } else if (ollamaModels.isEmpty()) {
+                Text("No models found.")
+            } else {
+                LazyColumn {
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Model Name",
+                                modifier = Modifier.weight(1f),
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text(
+                                text = "Size",
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                    items(ollamaModels) { model ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(modifier = Modifier.weight(1f)) {
+                                SelectionContainer {
+                                    Text(
+                                        text = model.name,
+                                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text(text = "${model.size / 1_000_000} MB")
                         }
                     }
                 }
