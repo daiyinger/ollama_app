@@ -193,24 +193,28 @@ fun SettingsScreen(
     val hasOverallChanges = hasModelSettingsChanges || psPath != selectedProfile.psPath || tagsPath != selectedProfile.tagsPath
 
     val saveModelSettings = {
-        val updatedProfile = selectedProfile.copy(
-            name = name,
-            apiHost = apiHost,
-            apiPath = apiPath,
-            model = model,
-            apiKey = apiKey,
-            apiMode = apiMode,
-            visionFamilies = visionFamilies,
-            checkImageProcessing = checkImageProcessing,
-            imageQuality = imageQuality,
-            pdfScale = pdfScale,
-            contextLength = contextLength
-        )
-        if (profiles.any { it.name == name }) {
-            viewModel.updateProfile(updatedProfile)
+        if (name.isBlank()) {
+            Toast.makeText(context, "Profile name cannot be empty", Toast.LENGTH_SHORT).show()
         } else {
-            viewModel.addProfile(updatedProfile)
-            viewModel.setActiveProfile(updatedProfile.name)
+            val updatedProfile = selectedProfile.copy(
+                name = name,
+                apiHost = apiHost,
+                apiPath = apiPath,
+                model = model,
+                apiKey = apiKey,
+                apiMode = apiMode,
+                visionFamilies = visionFamilies,
+                checkImageProcessing = checkImageProcessing,
+                imageQuality = imageQuality,
+                pdfScale = pdfScale,
+                contextLength = contextLength
+            )
+            if (profiles.any { it.name == name }) {
+                viewModel.updateProfile(updatedProfile)
+            } else {
+                viewModel.addProfile(updatedProfile)
+                viewModel.setActiveProfile(updatedProfile.name)
+            }
         }
     }
 
@@ -410,7 +414,7 @@ fun SettingsScreen(
                                     }
                                 }
                             }
-                            IconButton(onClick = { /* TODO: Implement Add */ }) {
+                            IconButton(onClick = { name = "" }) {
                                 Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.add_profile))
                             }
                             IconButton(onClick = {
