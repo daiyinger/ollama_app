@@ -27,11 +27,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
-import androidx.compose.material.DismissDirection
-import androidx.compose.material.DismissValue
 import androidx.compose.material.ExperimentalMaterialApi
-import androidx.compose.material.SwipeToDismiss
-import androidx.compose.material.rememberDismissState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -68,6 +64,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.io.OutputStream
 import java.util.Locale
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
+
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class)
 @Composable
@@ -89,6 +89,7 @@ fun ChatScreen(
     var enlargedImageUri by remember { mutableStateOf<Uri?>(null) }
     var showDeleteDialog by remember { mutableStateOf(false) }
     var messageToDelete by remember { mutableStateOf<ChatMessage?>(null) }
+    var showMenu by remember { mutableStateOf(false) }
 
     if (showDeleteDialog && messageToDelete != null) {
         DeleteConfirmationDialog(
@@ -117,6 +118,15 @@ fun ChatScreen(
         contract = ActivityResultContracts.GetContent(),
         onResult = { uri: Uri? ->
             uri?.let { viewModel.onFileSelected(it) }
+        }
+    )
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/markdown"),
+        onResult = { uri: Uri? ->
+            if (uri != null && conversationId != null) {
+                viewModel.exportToMarkdown(conversationId, uri)
+            }
         }
     )
 
@@ -161,6 +171,27 @@ fun ChatScreen(
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back"
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { showMenu = true }) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "More options"
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Export to Markdown") },
+                            onClick = {
+                                showMenu = false
+                                val fileName = (conversation?.title ?: "conversation").replace(Regex("[^a-zA-Z0-9.-]"), "_") + ".md"
+                                exportLauncher.launch(fileName)
+                            }
                         )
                     }
                 }
@@ -214,21 +245,35 @@ fun ChatScreen(
                 }
             }
             items(reversedMessages, key = { it.id }) { message ->
-                val dismissState = rememberDismissState(
-                    confirmStateChange = {
-                        if (it == DismissValue.DismissedToStart) {
-                            messageToDelete = message
-                            showDeleteDialog = true
-                        }
-                        return@rememberDismissState false
-                    }
+                // M3 State: 使用 rememberSwipeToDismissBoxState() 保持不变
+                val dismissState = rememberSwipeToDismissBoxState(
+                    // ✨ 新增 (核心修改): 使用 positionalThreshold 来判断滑动距离
+                    positionalThreshold = { totalDistance -> totalDistance * 0.5f }
                 )
-                SwipeToDismiss(
+
+                // ✨ 新增: 使用 LaunchedEffect 来监听状态变化，而不是滑动进度
+                // 当滑动超过阈值 (50%) 后，状态会变为 DismissedToEndToStart
+                LaunchedEffect(dismissState.currentValue) {
+                    if (dismissState.currentValue == SwipeToDismissBoxValue.EndToStart) {
+                        messageToDelete = message
+                        showDeleteDialog = true
+                        // 显示对话框后，立即将Item弹回原位
+                        coroutineScope.launch {
+                            dismissState.reset()
+                        }
+                    }
+                }
+
+                SwipeToDismissBox(
                     state = dismissState,
-                    directions = setOf(DismissDirection.EndToStart),
-                    background = {
+                    enableDismissFromStartToEnd = false, // 禁用从左到右
+                    enableDismissFromEndToStart = true,  // 启用从右到左
+
+                    // Material 3 没有 confirmValueChange 参数，请删除这一整行
+
+                    backgroundContent = {
                         val color = when (dismissState.targetValue) {
-                            DismissValue.DismissedToStart -> Color.Red.copy(alpha = 0.8f)
+                            SwipeToDismissBoxValue.EndToStart -> Color.Red.copy(alpha = 0.8f)
                             else -> Color.Transparent
                         }
                         Box(
@@ -244,21 +289,20 @@ fun ChatScreen(
                                 tint = Color.White
                             )
                         }
-                    },
-                    dismissContent = {
-                        MessageBubble(
-                            message = message,
-                            onImageClick = { uri ->
-                                enlargedImageUri = uri
-                            },
-                            onMessageClick = {
-                                if (conversationId != null) {
-                                    viewModel.toggleMessageExpanded(conversationId, it)
-                                }
-                            }
-                        )
                     }
-                )
+                ) { // 这个花括号是 content 的部分
+                    MessageBubble(
+                        message = message,
+                        onImageClick = { uri ->
+                            enlargedImageUri = uri
+                        },
+                        onMessageClick = {
+                            if (conversationId != null) {
+                                viewModel.toggleMessageExpanded(conversationId, it)
+                            }
+                        }
+                    )
+                }
             }
         }
     }

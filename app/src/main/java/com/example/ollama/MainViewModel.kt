@@ -35,6 +35,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.io.OutputStreamWriter
 import java.text.SimpleDateFormat
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
@@ -1113,5 +1114,35 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
 
     private fun getCurrentTimestamp(): String {
         return SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date())
+    }
+
+    fun exportToMarkdown(conversationId: String, uri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val conversation = _conversations.value.find { it.id == conversationId }
+            if (conversation == null) {
+                // Handle conversation not found
+                return@launch
+            }
+
+            try {
+                getApplication<Application>().contentResolver.openOutputStream(uri)?.use { outputStream ->
+                    OutputStreamWriter(outputStream).use { writer ->
+                        writer.write("# ${conversation.title}\n\n")
+                        conversation.messages.forEach { message ->
+                            writer.write("## ${message.sender}\n\n")
+                            writer.write("${message.content}\n\n")
+                            if (message.fileUri != null) {
+                                val fileName = message.fileName ?: "Attached File"
+                                writer.write("![${fileName}](${message.fileUri})\n\n")
+                            }
+                        }
+                    }
+                }
+                // Optionally, show a success message to the user
+            } catch (e: IOException) {
+                // Handle error
+                Log.e("MainViewModel", "Error exporting to Markdown", e)
+            }
+        }
     }
 }
