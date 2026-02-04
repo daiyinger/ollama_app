@@ -4,6 +4,7 @@ import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.horizontalScroll
@@ -69,6 +70,8 @@ fun ConversationHistoryScreen(
     val runningModelsError by viewModel.runningModelsError.collectAsState()
     val ollamaModels by viewModel.ollamaModels.collectAsState()
     val ollamaModelsError by viewModel.ollamaModelsError.collectAsState()
+    val showModelDetailsDialog by viewModel.showModelDetailsDialog.collectAsState()
+    val selectedModelDetails by viewModel.selectedModelDetails.collectAsState()
     var showRenameDialog by remember { mutableStateOf<Conversation?>(null) }
     var showRunningModelsDialog by remember { mutableStateOf(false) }
     var showOllamaModelsDialog by remember { mutableStateOf(false) }
@@ -103,8 +106,20 @@ fun ConversationHistoryScreen(
             onDismiss = {
                 showOllamaModelsDialog = false
                 viewModel.clearOllamaModelsError()
+            },
+            onModelClick = { model ->
+                viewModel.showOllamaModel(model.name)
             }
         )
+    }
+
+    if (showModelDetailsDialog) {
+        selectedModelDetails?.let {
+            ModelDetailsDialog(
+                modelDetails = it,
+                onDismiss = { viewModel.dismissOllamaModelDetailsDialog() }
+            )
+        }
     }
 
     if (showExitDialog) {
@@ -354,7 +369,8 @@ fun RunningModelsDialog(
 fun OllamaModelsDialog(
     ollamaModels: List<OllamaModel>,
     error: String?,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onModelClick: (OllamaModel) -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -394,7 +410,8 @@ fun OllamaModelsDialog(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 8.dp),
+                                .padding(vertical = 8.dp)
+                                .clickable { onModelClick(model) },
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Box(modifier = Modifier.weight(1f)) {
@@ -410,6 +427,32 @@ fun OllamaModelsDialog(
                             Text(text = "${model.size / 1_000_000} MB")
                         }
                     }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss) {
+                Text("OK")
+            }
+        }
+    )
+}
+
+@Composable
+fun ModelDetailsDialog(
+    modelDetails: ShowResponse,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(modelDetails.details.family) },
+        text = {
+            LazyColumn {
+                item { Text("Format: ${modelDetails.details.format}") }
+                item { Text("Parameter Size: ${modelDetails.details.parameterSize}") }
+                item { Text("Quantization Level: ${modelDetails.details.quantizationLevel}") }
+                modelDetails.details.families?.let {
+                    item { Text("Families: ${it.joinToString()}") }
                 }
             }
         },

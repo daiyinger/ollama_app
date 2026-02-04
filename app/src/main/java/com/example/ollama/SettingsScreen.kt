@@ -50,6 +50,7 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -343,6 +344,18 @@ fun SettingsScreen(
         }
     }
 
+    val showModelDetailsDialog by viewModel.showModelDetailsDialog.collectAsState()
+    if (showModelDetailsDialog) {
+        ModelDetailsDialog(viewModel = viewModel)
+    }
+
+    var showOllamaTagsDialog by remember { mutableStateOf(false) }
+    if (showOllamaTagsDialog) {
+        OllamaTagsDialog(viewModel = viewModel) {
+            showOllamaTagsDialog = false
+        }
+    }
+
     Scaffold(
         modifier = modifier,
         topBar = {
@@ -561,7 +574,7 @@ fun SettingsScreen(
                     value = tagsPath,
                     onValueChange = { tagsPath = it },
                     label = { Text("Tags Path") },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().clickable { showOllamaTagsDialog = true },
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -614,6 +627,79 @@ fun SettingsScreen(
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(stringResource(R.string.back))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ModelDetailsDialog(viewModel: MainViewModel) {
+    val modelDetails by viewModel.selectedModelDetails.collectAsState()
+
+    Dialog(
+        onDismissRequest = { viewModel.dismissOllamaModelDetailsDialog() },
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                modelDetails?.let {
+                    Text(text = "Model Details", style = MaterialTheme.typography.titleLarge)
+                    Spacer(modifier = Modifier.padding(8.dp))
+                    Text(text = "Family: ${it.details.family}")
+                    Text(text = "Families: ${it.details.families?.joinToString(", ")}")
+                    Text(text = "Parameter Size: ${it.details.parameterSize}")
+                    Text(text = "Quantization Level: ${it.details.quantizationLevel}")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun OllamaTagsDialog(viewModel: MainViewModel, onDismiss: () -> Unit) {
+    val ollamaModels by viewModel.ollamaModels.collectAsState()
+    val ollamaModelsError by viewModel.ollamaModelsError.collectAsState()
+
+    LaunchedEffect(Unit) {
+        viewModel.listOllamaModels()
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Column {
+                if (ollamaModelsError != null) {
+                    Text(text = ollamaModelsError!!)
+                } else {
+                    LazyColumn {
+                        items(ollamaModels) { model ->
+                            Text(
+                                text = model.name,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        viewModel.showOllamaModel(model.name)
+                                        onDismiss()
+                                    }
+                                    .padding(16.dp)
+                            )
+                        }
+                    }
                 }
             }
         }

@@ -110,6 +110,11 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
     private lateinit var ollamaApiPs: OllamaApiService
     private val pdfProcessingJobs = mutableMapOf<String, Job>()
     private val requestLoggingInterceptor: RequestLoggingInterceptor
+    private val _selectedModelDetails = MutableStateFlow<ShowResponse?>(null)
+    val selectedModelDetails: StateFlow<ShowResponse?> = _selectedModelDetails.asStateFlow()
+
+    private val _showModelDetailsDialog = MutableStateFlow(false)
+    val showModelDetailsDialog: StateFlow<Boolean> = _showModelDetailsDialog.asStateFlow()
 
     init {
         requestLoggingInterceptor = RequestLoggingInterceptor(application)
@@ -876,6 +881,7 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                             updateConversationTitle(conversationId, title)
                         }
                     }
+                    else -> {}
                 }
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Error generating title", e)
@@ -968,6 +974,27 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
             }
         }
     }
+
+    fun showOllamaModel(modelName: String) {
+        viewModelScope.launch {
+            try {
+                val profile = activeProfile.value ?: return@launch
+                val url = profile.apiHost.removeSuffix("/") + "/api/show"
+                val response = ollamaApi.show(url, ShowRequest(name = modelName))
+                _selectedModelDetails.value = response
+                _showModelDetailsDialog.value = true
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error showing ollama model", e)
+                // Handle error, maybe show a toast
+            }
+        }
+    }
+
+    fun dismissOllamaModelDetailsDialog() {
+        _showModelDetailsDialog.value = false
+        _selectedModelDetails.value = null
+    }
+
 
     fun clearOllamaModelsError() {
         _ollamaModelsError.value = null
@@ -1072,11 +1099,6 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    private fun getCurrentTimestamp(): String {
-        val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault())
-        return sdf.format(Date())
-    }
-
     private fun formatOllamaPerformance(response: OllamaResponse): String? {
         return response.eval_count?.let {
             if (response.eval_duration != null && response.eval_duration > 0) {
@@ -1087,5 +1109,9 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
 
     private fun formatOpenAIPerformance(response: OpenAIResponse): String? {
         return null
+    }
+
+    private fun getCurrentTimestamp(): String {
+        return SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date())
     }
 }
