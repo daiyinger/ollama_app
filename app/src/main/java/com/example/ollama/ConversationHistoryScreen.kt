@@ -2,6 +2,7 @@ package com.example.ollama
 
 import android.app.Activity
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -24,6 +25,8 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Task
@@ -35,6 +38,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SwipeToDismissBox
@@ -57,8 +61,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ConversationHistoryScreen(
     viewModel: MainViewModel,
@@ -77,6 +85,7 @@ fun ConversationHistoryScreen(
     var showOllamaModelsDialog by remember { mutableStateOf(false) }
     var showExitDialog by remember { mutableStateOf(false) }
     val activity = (LocalContext.current as? Activity)
+    var expandedGroups by remember { mutableStateOf(setOf("Today")) }
 
     if (showRenameDialog != null) {
         RenameConversationDialog(
@@ -193,44 +202,98 @@ fun ConversationHistoryScreen(
                 }
             }
         } else {
+            val groupedConversations = conversations.groupBy {
+                if (it.createdAt != 0L) {
+                    Instant.ofEpochMilli(it.createdAt).atZone(ZoneId.systemDefault()).toLocalDate()
+                } else {
+                    try {
+                        val dateStr = it.title.substringAfter("Chat ").substringBefore("_")
+                        LocalDate.parse(dateStr)
+                    } catch (e: Exception) {
+                        null
+                    }
+                }
+            }.toSortedMap(compareByDescending { it })
+
+
             LazyColumn(modifier = Modifier.padding(padding)) {
-                items(conversations, key = { it.id }) { conversation ->
-                    val dismissState = rememberSwipeToDismissBoxState(
-                        confirmValueChange = {
-                            if (it == SwipeToDismissBoxValue.EndToStart) {
-                                viewModel.deleteConversation(conversation.id)
-                                true
-                            } else {
-                                false
-                            }
+                groupedConversations.forEach { (date, conversationsInGroup) ->
+                    val headerText = when {
+                        date == null -> "Other"
+                        date == LocalDate.now() -> "Today"
+                        date == LocalDate.now().minusDays(1) -> "Yesterday"
+                        date.year == LocalDate.now().year -> date.format(DateTimeFormatter.ofPattern("MMMM d"))
+                        else -> date.format(DateTimeFormatter.ofPattern("yyyy, MMMM d"))
+                    }
+
+                    val isExpanded = expandedGroups.contains(headerText)
+
+                    stickyHeader {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .clickable {
+                                    expandedGroups = if (isExpanded) {
+                                        expandedGroups - headerText
+                                    } else {
+                                        expandedGroups + headerText
+                                    }
+                                }
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = headerText,
+                                modifier = Modifier.weight(1f),
+                                fontWeight = FontWeight.Bold
+                            )
+                            Icon(
+                                imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                contentDescription = if (isExpanded) "Collapse" else "Expand"
+                            )
                         }
-                    )
-                    SwipeToDismissBox(
-                        state = dismissState,
-                        enableDismissFromEndToStart = true,
-                        enableDismissFromStartToEnd = false,
-                        backgroundContent = {
-                            val color = Color.Red.copy(alpha = 0.5f)
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(color)
-                                    .padding(horizontal = 20.dp),
-                                contentAlignment = Alignment.CenterEnd
+                    }
+                    if (isExpanded) {
+                        items(conversationsInGroup, key = { it.id }) { conversation ->
+                            val dismissState = rememberSwipeToDismissBoxState(
+                                confirmValueChange = {
+                                    if (it == SwipeToDismissBoxValue.EndToStart) {
+                                        viewModel.deleteConversation(conversation.id)
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                }
+                            )
+                            SwipeToDismissBox(
+                                state = dismissState,
+                                enableDismissFromEndToStart = true,
+                                enableDismissFromStartToEnd = false,
+                                backgroundContent = {
+                                    val color = Color.Red.copy(alpha = 0.5f)
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(color)
+                                            .padding(horizontal = 20.dp),
+                                        contentAlignment = Alignment.CenterEnd
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Delete,
+                                            contentDescription = "Delete",
+                                            tint = Color.White
+                                        )
+                                    }
+                                }
                             ) {
-                                Icon(
-                                    Icons.Default.Delete,
-                                    contentDescription = "Delete",
-                                    tint = Color.White
+                                ConversationListItem(
+                                    conversation = conversation,
+                                    onClick = { onNavigateToConversation(conversation.id) },
+                                    onLongClick = { showRenameDialog = conversation }
                                 )
                             }
                         }
-                    ) {
-                        ConversationListItem(
-                            conversation = conversation,
-                            onClick = { onNavigateToConversation(conversation.id) },
-                            onLongClick = { showRenameDialog = conversation }
-                        )
                     }
                 }
             }

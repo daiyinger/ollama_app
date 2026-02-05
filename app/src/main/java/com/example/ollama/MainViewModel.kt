@@ -253,7 +253,7 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
         val sdf = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.getDefault())
         val currentTime = sdf.format(Date())
         val logTag = "chat_$currentTime"
-        val newConversation = Conversation(title = "Chat $currentTime", profileName = activeProfile.value?.name)
+        val newConversation = Conversation(title = "Chat $currentTime", profileName = activeProfile.value?.name, createdAt = System.currentTimeMillis())
         _conversations.value = _conversations.value + newConversation
         saveConversations()
         requestLoggingInterceptor.logTag = logTag

@@ -10,5 +10,6 @@ data class Conversation(
     val messages: List<ChatMessage> = emptyList(),
     val inferenceStatus: String = "",
     val pdfProcessingStatus: PdfProcessingStatus? = null,
-    val profileName: String? = null
+    val profileName: String? = null,
+    val createdAt: Long = 0
 )
