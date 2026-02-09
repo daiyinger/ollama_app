@@ -45,6 +45,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -67,6 +69,7 @@ import java.util.Locale
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.rememberSwipeToDismissBoxState
+import kotlin.math.abs
 
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class)
@@ -90,6 +93,10 @@ fun ChatScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var messageToDelete by remember { mutableStateOf<ChatMessage?>(null) }
     var showMenu by remember { mutableStateOf(false) }
+
+    val density = LocalDensity.current
+    val configuration = LocalConfiguration.current
+    val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
 
     if (showDeleteDialog && messageToDelete != null) {
         DeleteConfirmationDialog(
@@ -245,32 +252,28 @@ fun ChatScreen(
                 }
             }
             items(reversedMessages, key = { it.id }) { message ->
-                // M3 State: 使用 rememberSwipeToDismissBoxState() 保持不变
+                // 使用 LaunchedEffect 处理逻辑，避免 confirmValueChange 中的循环引用
                 val dismissState = rememberSwipeToDismissBoxState(
-                    // ✨ 新增 (核心修改): 使用 positionalThreshold 来判断滑动距离
+                    confirmValueChange = { false }, // 始终回弹，由 LaunchedEffect 决定是否触发对话框
                     positionalThreshold = { totalDistance -> totalDistance * 0.5f }
                 )
 
-                // ✨ 新增: 使用 LaunchedEffect 来监听状态变化，而不是滑动进度
-                // 当滑动超过阈值 (50%) 后，状态会变为 DismissedToEndToStart
-                LaunchedEffect(dismissState.currentValue) {
-                    if (dismissState.currentValue == SwipeToDismissBoxValue.EndToStart) {
-                        messageToDelete = message
-                        showDeleteDialog = true
-                        // 显示对话框后，立即将Item弹回原位
-                        coroutineScope.launch {
-                            dismissState.reset()
+                LaunchedEffect(dismissState.targetValue) {
+                    if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart) {
+                        // 🔑 只有在实际位移超过 30% 屏幕宽度时才触发对话框
+                        // 即使是快速滑动（Fling），如果物理位移不够，也会被过滤
+                        val currentOffset = try { dismissState.requireOffset() } catch (e: Exception) { 0f }
+                        if (abs(currentOffset) > screenWidthPx * 0.3f) {
+                            messageToDelete = message
+                            showDeleteDialog = true
                         }
                     }
                 }
 
                 SwipeToDismissBox(
                     state = dismissState,
-                    enableDismissFromStartToEnd = false, // 禁用从左到右
-                    enableDismissFromEndToStart = true,  // 启用从右到左
-
-                    // Material 3 没有 confirmValueChange 参数，请删除这一整行
-
+                    enableDismissFromStartToEnd = false,
+                    enableDismissFromEndToStart = true,
                     backgroundContent = {
                         val color = when (dismissState.targetValue) {
                             SwipeToDismissBoxValue.EndToStart -> Color.Red.copy(alpha = 0.8f)
@@ -279,7 +282,7 @@ fun ChatScreen(
                         Box(
                             Modifier
                                 .fillMaxSize()
-                                .background(color)
+                                .background(color, RoundedCornerShape(16.dp))
                                 .padding(horizontal = 20.dp),
                             contentAlignment = Alignment.CenterEnd
                         ) {
@@ -290,7 +293,7 @@ fun ChatScreen(
                             )
                         }
                     }
-                ) { // 这个花括号是 content 的部分
+                ) {
                     MessageBubble(
                         message = message,
                         onImageClick = { uri ->

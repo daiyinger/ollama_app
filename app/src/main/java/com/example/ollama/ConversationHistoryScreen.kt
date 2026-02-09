@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -48,6 +49,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -56,7 +58,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -65,6 +69,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -81,11 +86,16 @@ fun ConversationHistoryScreen(
     val showModelDetailsDialog by viewModel.showModelDetailsDialog.collectAsState()
     val selectedModelDetails by viewModel.selectedModelDetails.collectAsState()
     var showRenameDialog by remember { mutableStateOf<Conversation?>(null) }
+    var showDeleteDialog by remember { mutableStateOf<Conversation?>(null) }
     var showRunningModelsDialog by remember { mutableStateOf(false) }
     var showOllamaModelsDialog by remember { mutableStateOf(false) }
     var showExitDialog by remember { mutableStateOf(false) }
     val activity = (LocalContext.current as? Activity)
     var expandedGroups by remember { mutableStateOf(setOf("Today")) }
+
+    val density = LocalDensity.current
+    val configuration = LocalConfiguration.current
+    val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
 
     if (showRenameDialog != null) {
         RenameConversationDialog(
@@ -94,6 +104,16 @@ fun ConversationHistoryScreen(
             onRename = { newTitle ->
                 viewModel.renameConversation(showRenameDialog!!.id, newTitle)
             }
+        )
+    }
+
+    if (showDeleteDialog != null) {
+        DeleteConversationConfirmationDialog(
+            onConfirm = {
+                viewModel.deleteConversation(showDeleteDialog!!.id)
+                showDeleteDialog = null
+            },
+            onDismiss = { showDeleteDialog = null }
         )
     }
 
@@ -257,25 +277,32 @@ fun ConversationHistoryScreen(
                     if (isExpanded) {
                         items(conversationsInGroup, key = { it.id }) { conversation ->
                             val dismissState = rememberSwipeToDismissBoxState(
-                                confirmValueChange = {
-                                    if (it == SwipeToDismissBoxValue.EndToStart) {
-                                        viewModel.deleteConversation(conversation.id)
-                                        true
-                                    } else {
-                                        false
+                                confirmValueChange = { false },
+                                positionalThreshold = { totalDistance -> totalDistance * 0.5f }
+                            )
+
+                            LaunchedEffect(dismissState.targetValue) {
+                                if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart) {
+                                    val currentOffset = try { dismissState.requireOffset() } catch (e: Exception) { 0f }
+                                    if (abs(currentOffset) > screenWidthPx * 0.3f) {
+                                        showDeleteDialog = conversation
                                     }
                                 }
-                            )
+                            }
+
                             SwipeToDismissBox(
                                 state = dismissState,
                                 enableDismissFromEndToStart = true,
                                 enableDismissFromStartToEnd = false,
                                 backgroundContent = {
-                                    val color = Color.Red.copy(alpha = 0.5f)
+                                    val color = when (dismissState.targetValue) {
+                                        SwipeToDismissBoxValue.EndToStart -> Color.Red.copy(alpha = 0.8f)
+                                        else -> Color.Transparent
+                                    }
                                     Box(
                                         modifier = Modifier
                                             .fillMaxSize()
-                                            .background(color)
+                                            .background(color, RoundedCornerShape(16.dp))
                                             .padding(horizontal = 20.dp),
                                         contentAlignment = Alignment.CenterEnd
                                     ) {
@@ -299,6 +326,28 @@ fun ConversationHistoryScreen(
             }
         }
     }
+}
+
+@Composable
+fun DeleteConversationConfirmationDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = "Delete Conversation") },
+        text = { Text(text = "Are you sure you want to delete this conversation?") },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("Delete")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 @OptIn(ExperimentalFoundationApi::class)
