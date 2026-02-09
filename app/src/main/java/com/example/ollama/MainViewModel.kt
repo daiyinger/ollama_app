@@ -1020,7 +1020,7 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                 }
             }
-            _logFiles.value = allLogFiles.sortedByDescending { it.file.lastModified() }
+            _logFiles.value = allLogFiles; //.sortedByDescending { it.file.lastModified() }
         }
     }
 
