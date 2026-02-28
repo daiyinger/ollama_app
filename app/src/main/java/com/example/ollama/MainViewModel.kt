@@ -107,6 +107,9 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
     private val _enableSessionLogging = MutableStateFlow(false)
     val enableSessionLogging: StateFlow<Boolean> = _enableSessionLogging.asStateFlow()
 
+    private val _expandedGroups = MutableStateFlow(setOf("Today"))
+    val expandedGroups: StateFlow<Set<String>> = _expandedGroups.asStateFlow()
+
     private lateinit var ollamaApi: OllamaApiService
     private lateinit var ollamaApiPs: OllamaApiService
     private val pdfProcessingJobs = mutableMapOf<String, Job>()
@@ -215,6 +218,10 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
     fun setEnableSessionLogging(enabled: Boolean) {
         settingsManager.setEnableSessionLogging(enabled)
         _enableSessionLogging.value = enabled
+    }
+
+    fun setExpandedGroups(groups: Set<String>) {
+        _expandedGroups.value = groups
     }
 
     fun exportSettings(): String {
@@ -1070,10 +1077,6 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                         logFile.writeText("")
                         withContext(Dispatchers.Main) {
                             _logContent.value = ""
-                        }
-                    } else {
-                        withContext(Dispatchers.Main) {
-                            _logContent.value = "Log file not found."
                         }
                     }
                 } ?: withContext(Dispatchers.Main) {

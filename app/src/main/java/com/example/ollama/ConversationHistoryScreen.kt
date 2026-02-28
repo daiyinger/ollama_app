@@ -91,7 +91,7 @@ fun ConversationHistoryScreen(
     var showOllamaModelsDialog by remember { mutableStateOf(false) }
     var showExitDialog by remember { mutableStateOf(false) }
     val activity = (LocalContext.current as? Activity)
-    var expandedGroups by remember { mutableStateOf(setOf("Today")) }
+    val expandedGroups by viewModel.expandedGroups.collectAsState()
 
     val density = LocalDensity.current
     val configuration = LocalConfiguration.current
@@ -254,11 +254,9 @@ fun ConversationHistoryScreen(
                                 .fillMaxWidth()
                                 .background(MaterialTheme.colorScheme.surfaceVariant)
                                 .clickable {
-                                    expandedGroups = if (isExpanded) {
-                                        expandedGroups - headerText
-                                    } else {
-                                        expandedGroups + headerText
-                                    }
+                                    viewModel.setExpandedGroups(
+                                        if (isExpanded) expandedGroups - headerText else expandedGroups + headerText
+                                    )
                                 }
                                 .padding(horizontal = 16.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically

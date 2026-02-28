@@ -143,13 +143,10 @@ fun ChatScreen(
         }
     }
 
-    LaunchedEffect(messages.size, messages.lastOrNull()?.content) {
-        if (messages.isNotEmpty()) {
-            coroutineScope.launch {
-                listState.scrollToItem(0)
-            }
-        }
-    }
+    // Removed the LaunchedEffect that forces scrolling to the top (item 0)
+    // to preserve the scroll position when returning to the conversation.
+    // If a specific scroll-to-latest-message behavior is desired,
+    // it should be implemented with more specific conditions (e.g., only for new AI responses).
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
