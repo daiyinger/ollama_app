@@ -68,6 +68,7 @@ import androidx.compose.ui.unit.dp
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.YearMonth // Add this import
 import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 
@@ -222,31 +223,28 @@ fun ConversationHistoryScreen(
                 }
             }
         } else {
-            val groupedConversations = conversations.groupBy {
-                if (it.createdAt != 0L) {
-                    Instant.ofEpochMilli(it.createdAt).atZone(ZoneId.systemDefault()).toLocalDate()
-                } else {
-                    try {
-                        val dateStr = it.title.substringAfter("Chat ").substringBefore("_")
-                        LocalDate.parse(dateStr)
-                    } catch (e: Exception) {
-                        null
+            val conversationsByMonth = conversations
+                .groupBy { conversation ->
+                    val localDate = if (conversation.createdAt != 0L) {
+                        Instant.ofEpochMilli(conversation.createdAt).atZone(ZoneId.systemDefault()).toLocalDate()
+                    } else {
+                        try {
+                            val dateStr = conversation.title.substringAfter("Chat ").substringBefore("_")
+                            LocalDate.parse(dateStr)
+                        } catch (e: Exception) {
+                            null
+                        }
                     }
+                    localDate?.let { YearMonth.from(it) }
                 }
-            }.toSortedMap(compareByDescending { it })
-
+                .filterKeys { it != null }
+                .mapKeys { it.key!! }
+                .toSortedMap(compareByDescending { it })
 
             LazyColumn(modifier = Modifier.padding(padding)) {
-                groupedConversations.forEach { (date, conversationsInGroup) ->
-                    val headerText = when {
-                        date == null -> "Other"
-                        date == LocalDate.now() -> "Today"
-                        date == LocalDate.now().minusDays(1) -> "Yesterday"
-                        date.year == LocalDate.now().year -> date.format(DateTimeFormatter.ofPattern("MMMM d"))
-                        else -> date.format(DateTimeFormatter.ofPattern("yyyy, MMMM d"))
-                    }
-
-                    val isExpanded = expandedGroups.contains(headerText)
+                conversationsByMonth.forEach { (month, conversationsInMonth) ->
+                    val monthHeaderText = month.format(DateTimeFormatter.ofPattern("yyyy年MM月"))
+                    val isMonthExpanded = expandedGroups.contains(monthHeaderText)
 
                     stickyHeader {
                         Row(
@@ -255,68 +253,105 @@ fun ConversationHistoryScreen(
                                 .background(MaterialTheme.colorScheme.surfaceVariant)
                                 .clickable {
                                     viewModel.setExpandedGroups(
-                                        if (isExpanded) expandedGroups - headerText else expandedGroups + headerText
+                                        if (isMonthExpanded) expandedGroups - monthHeaderText else expandedGroups + monthHeaderText
                                     )
                                 }
                                 .padding(horizontal = 16.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = headerText,
+                                text = monthHeaderText,
                                 modifier = Modifier.weight(1f),
                                 fontWeight = FontWeight.Bold
                             )
                             Icon(
-                                imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                contentDescription = if (isExpanded) "Collapse" else "Expand"
+                                imageVector = if (isMonthExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                contentDescription = if (isMonthExpanded) "Collapse" else "Expand"
                             )
                         }
                     }
-                    if (isExpanded) {
-                        items(conversationsInGroup, key = { it.id }) { conversation ->
-                            val dismissState = rememberSwipeToDismissBoxState(
-                                confirmValueChange = { false },
-                                positionalThreshold = { totalDistance -> totalDistance * 0.5f }
-                            )
 
-                            LaunchedEffect(dismissState.targetValue) {
-                                if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart) {
-                                    val currentOffset = try { dismissState.requireOffset() } catch (e: Exception) { 0f }
-                                    if (abs(currentOffset) > screenWidthPx * 0.3f) {
-                                        showDeleteDialog = conversation
+                    if (isMonthExpanded) {
+                        val conversationsByDay = conversationsInMonth
+                            .groupBy { conversation ->
+                                if (conversation.createdAt != 0L) {
+                                    Instant.ofEpochMilli(conversation.createdAt).atZone(ZoneId.systemDefault()).toLocalDate()
+                                } else {
+                                    try {
+                                        val dateStr = conversation.title.substringAfter("Chat ").substringBefore("_")
+                                        LocalDate.parse(dateStr)
+                                    } catch (e: Exception) {
+                                        null
                                     }
                                 }
                             }
+                            .filterKeys { it != null }
+                            .mapKeys { it.key!! }
+                            .toSortedMap(compareByDescending { it })
 
-                            SwipeToDismissBox(
-                                state = dismissState,
-                                enableDismissFromEndToStart = true,
-                                enableDismissFromStartToEnd = false,
-                                backgroundContent = {
-                                    val color = when (dismissState.targetValue) {
-                                        SwipeToDismissBoxValue.EndToStart -> Color.Red.copy(alpha = 0.8f)
-                                        else -> Color.Transparent
-                                    }
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(color, RoundedCornerShape(16.dp))
-                                            .padding(horizontal = 20.dp),
-                                        contentAlignment = Alignment.CenterEnd
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Delete,
-                                            contentDescription = "Delete",
-                                            tint = Color.White
-                                        )
+                        conversationsByDay.forEach { (date, conversationsInDay) ->
+                            val dayHeaderText = when {
+                                date == LocalDate.now() -> "今天"
+                                date == LocalDate.now().minusDays(1) -> "昨天"
+                                else -> date.format(DateTimeFormatter.ofPattern("MM月dd日 EEEE"))
+                            }
+                            stickyHeader {
+                                Text(
+                                    text = dayHeaderText,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(MaterialTheme.colorScheme.surfaceContainer)
+                                        .padding(horizontal = 24.dp, vertical = 4.dp),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+
+                            items(conversationsInDay, key = { it.id }) { conversation ->
+                                val dismissState = rememberSwipeToDismissBoxState(
+                                    confirmValueChange = { false },
+                                    positionalThreshold = { totalDistance -> totalDistance * 0.5f }
+                                )
+
+                                LaunchedEffect(dismissState.targetValue) {
+                                    if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart) {
+                                        val currentOffset = try { dismissState.requireOffset() } catch (e: Exception) { 0f }
+                                        if (abs(currentOffset) > screenWidthPx * 0.3f) {
+                                            showDeleteDialog = conversation
+                                        }
                                     }
                                 }
-                            ) {
-                                ConversationListItem(
-                                    conversation = conversation,
-                                    onClick = { onNavigateToConversation(conversation.id) },
-                                    onLongClick = { showRenameDialog = conversation }
-                                )
+
+                                SwipeToDismissBox(
+                                    state = dismissState,
+                                    enableDismissFromEndToStart = true,
+                                    enableDismissFromStartToEnd = false,
+                                    backgroundContent = {
+                                        val color = when (dismissState.targetValue) {
+                                            SwipeToDismissBoxValue.EndToStart -> Color.Red.copy(alpha = 0.8f)
+                                            else -> Color.Transparent
+                                        }
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .background(color, RoundedCornerShape(16.dp))
+                                                .padding(horizontal = 20.dp),
+                                            contentAlignment = Alignment.CenterEnd
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Delete,
+                                                contentDescription = "Delete",
+                                                tint = Color.White
+                                            )
+                                        }
+                                    }
+                                ) {
+                                    ConversationListItem(
+                                        conversation = conversation,
+                                        onClick = { onNavigateToConversation(conversation.id) },
+                                        onLongClick = { showRenameDialog = conversation }
+                                    )
+                                }
                             }
                         }
                     }

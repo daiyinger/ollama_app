@@ -67,6 +67,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.ollama.ui.theme.OllamaTheme
@@ -603,13 +604,19 @@ fun SettingsScreen(
                     onClick = { openDocumentLauncher.launch(arrayOf("application/json")) },
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Import Settings")
+                    Text(text="Import Settings",
+                        style = MaterialTheme.typography.labelLarge.copy(
+                        fontSize = 12.sp),
+                        maxLines = 1)
                 }
                 Button(
                     onClick = { createDocumentLauncher.launch("ollama_settings.json") },
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("Export Settings")
+                    Text(text="Export Settings",
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            fontSize = 12.sp),
+                        maxLines = 1)
                 }
             }
             Spacer(modifier = Modifier.padding(4.dp))
