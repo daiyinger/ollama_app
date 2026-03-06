@@ -69,7 +69,13 @@ data class OpenAIRequest(
     val model: String,
     val messages: List<OpenAIRequestMessage>,
     val stream: Boolean = false,
-    val max_tokens: Int? = null
+    val max_tokens: Int? = null,
+    val stream_options: OpenAIStreamOptions? = null
+)
+
+@Serializable
+data class OpenAIStreamOptions(
+    val include_usage: Boolean
 )
 
 // -- Response --
@@ -83,7 +89,11 @@ data class OpenAIChoice(val message: OpenAIMessage)
 
 /** The usage stats for an OpenAI response */
 @Serializable
-data class OpenAIUsage(val prompt_tokens: Int, val completion_tokens: Int, val total_tokens: Int)
+data class OpenAIUsage(
+    val prompt_tokens: Int? = null,
+    val completion_tokens: Int? = null,
+    val total_tokens: Int? = null
+)
 
 /** Response from the OpenAI compatible API */
 @Serializable
@@ -103,7 +113,8 @@ data class OpenAIStreamDelta(
 
 @Serializable
 data class OpenAIStreamResponse(
-    val choices: List<OpenAIStreamChoice>
+    val choices: List<OpenAIStreamChoice>? = null,
+    val usage: OpenAIUsage? = null
 )
 
 @Serializable

@@ -727,7 +727,8 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                             val request = OpenAIRequest(
                                 model = profile.model,
                                 messages = messages,
-                                stream = true
+                                stream = true,
+                                stream_options = OpenAIStreamOptions(include_usage = true)
                             )
                             updateConversationInferenceStatus(conversationId, "Sending...")
                             val responseBody = ollamaApi.generateOpenAIStream(url = url, request = request.copy(max_tokens = profile.contextLength))
@@ -760,8 +761,13 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
 
                                     try {
                                         val openAIResponse = json.decodeFromString<OpenAIStreamResponse>(data)
-                                        val delta = openAIResponse.choices.firstOrNull()?.delta?.content ?: ""
+                                        val delta = openAIResponse.choices?.firstOrNull()?.delta?.content ?: ""
                                         ollamaMessage = ollamaMessage.copy(content = ollamaMessage.content + delta)
+                                        
+                                        if (openAIResponse.usage != null) {
+                                            ollamaMessage = ollamaMessage.copy(performance = formatOpenAIUsage(openAIResponse.usage))
+                                        }
+
                                         withContext(Dispatchers.Main) {
                                             updateLastMessageInConversation(conversationId, ollamaMessage)
                                         }
@@ -1104,15 +1110,17 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private fun formatOllamaPerformance(response: OllamaResponse): String? {
-        return response.eval_count?.let {
+        val tokens = "Prompt: ${response.prompt_eval_count ?: 0} tokens, Response: ${response.eval_count ?: 0} tokens"
+        val speed = response.eval_count?.let {
             if (response.eval_duration != null && response.eval_duration > 0) {
                 "%.2f t/s".format(it / (response.eval_duration / 1_000_000_000.0))
             } else null
         }
+        return if (speed != null) "$tokens ($speed)" else tokens
     }
 
-    private fun formatOpenAIPerformance(response: OpenAIResponse): String? {
-        return null
+    private fun formatOpenAIUsage(usage: OpenAIUsage): String {
+        return "Prompt: ${usage.prompt_tokens ?: 0} tokens, Response: ${usage.completion_tokens ?: 0} tokens, Total: ${usage.total_tokens ?: 0} tokens"
     }
 
     private fun getCurrentTimestamp(): String {
