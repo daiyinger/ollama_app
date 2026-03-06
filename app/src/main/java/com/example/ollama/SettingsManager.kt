@@ -44,6 +44,7 @@ class SettingsManager(context: Context) {
         const val KEY_ACTIVE_PROFILE_NAME = "active_profile_name"
         const val KEY_CONVERSATIONS = "conversations"
         const val KEY_ENABLE_SESSION_LOGGING = "enable_session_logging"
+        const val KEY_EXPANDED_GROUPS = "expanded_groups"
 
         val defaultProfile = OllamaProfile(
             name = "Default",
@@ -165,6 +166,17 @@ class SettingsManager(context: Context) {
 
     fun getEnableSessionLogging(): Boolean {
         return prefs.getBoolean(KEY_ENABLE_SESSION_LOGGING, true)
+    }
+
+    fun saveExpandedGroups(groups: Set<String>) {
+        // SharedPreferences.putStringSet is known to have issues when the same set is modified and saved.
+        // It's safer to create a new HashSet or use a comma-separated string if simple set doesn't work.
+        prefs.edit().putStringSet(KEY_EXPANDED_GROUPS, HashSet(groups)).apply()
+    }
+
+    fun getExpandedGroups(): Set<String> {
+        // Return a copy to ensure any modifications don't affect the original set stored in SharedPreferences
+        return prefs.getStringSet(KEY_EXPANDED_GROUPS, null)?.toSet() ?: setOf("今天", "昨天")
     }
 
     fun exportSettings(): String {

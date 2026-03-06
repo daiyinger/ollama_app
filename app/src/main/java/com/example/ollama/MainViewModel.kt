@@ -107,7 +107,7 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
     private val _enableSessionLogging = MutableStateFlow(false)
     val enableSessionLogging: StateFlow<Boolean> = _enableSessionLogging.asStateFlow()
 
-    private val _expandedGroups = MutableStateFlow(setOf("Today"))
+    private val _expandedGroups = MutableStateFlow(setOf<String>())
     val expandedGroups: StateFlow<Set<String>> = _expandedGroups.asStateFlow()
 
     private lateinit var ollamaApi: OllamaApiService
@@ -123,6 +123,7 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
     init {
         requestLoggingInterceptor = RequestLoggingInterceptor(application)
         _enableSessionLogging.value = settingsManager.getEnableSessionLogging()
+        _expandedGroups.value = settingsManager.getExpandedGroups()
         viewModelScope.launch {
             settingsManager.getActiveProfileFlow().collect { createOllamaService() }
         }
@@ -222,6 +223,7 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun setExpandedGroups(groups: Set<String>) {
         _expandedGroups.value = groups
+        settingsManager.saveExpandedGroups(groups)
     }
 
     fun exportSettings(): String {
