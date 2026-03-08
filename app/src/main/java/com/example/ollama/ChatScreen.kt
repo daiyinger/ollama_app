@@ -71,6 +71,10 @@ import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import kotlin.math.abs
+import com.halilibo.richtext.markdown.Markdown
+import com.halilibo.richtext.ui.RichTextStyle
+import com.halilibo.richtext.ui.material3.RichText
+import com.halilibo.richtext.ui.resolveDefaults
 
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class)
@@ -453,8 +457,7 @@ fun CodeBlock(codeText: String) {
                 .fillMaxWidth()
                 .padding(horizontal = 8.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+            verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = "Code",
                 color = Color.LightGray,
@@ -688,26 +691,15 @@ fun MessageBubble(
                     }
 
                     if (message.isExpanded) {
-                        val parts = message.content.split("```")
-                        if (parts.size == 1) {
-                            if (message.content.isNotBlank()) {
-                                Text(
-                                    text = message.content,
+                        if (message.content.isNotBlank()) {
+                            // Use Markdown rendering for expanded messages
+                            RichText(
+                                modifier = Modifier.fillMaxWidth(),
+                                style = RichTextStyle.Default.resolveDefaults()
+                            ) {
+                                Markdown(
+                                    content = message.content
                                 )
-                            }
-                        } else {
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                parts.forEachIndexed { index, part ->
-                                    if (part.isNotBlank()) {
-                                        if (index % 2 == 1) { // Code block
-                                            CodeBlock(codeText = part.trim())
-                                        } else { // Normal text
-                                            Text(
-                                                text = part.trim(),
-                                            )
-                                        }
-                                    }
-                                }
                             }
                         }
                     } else {

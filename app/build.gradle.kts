@@ -72,6 +72,10 @@ dependencies {
     // Coil
     implementation("io.coil-kt:coil-compose:2.6.0")
 
+    // Markdown support
+    implementation("com.halilibo.compose-richtext:richtext-commonmark:0.20.0")
+    implementation("com.halilibo.compose-richtext:richtext-ui-material3:0.20.0")
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
