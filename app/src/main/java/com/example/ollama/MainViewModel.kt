@@ -347,6 +347,28 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    fun toggleThinkingExpanded(conversationId: String, message: ChatMessage) {
+        val conversationIndex = _conversations.value.indexOfFirst { it.id == conversationId }
+        if (conversationIndex != -1) {
+            val updatedConversations = _conversations.value.toMutableList()
+            val oldConversation = updatedConversations[conversationIndex]
+            val messageIndex = oldConversation.messages.indexOf(message)
+            if (messageIndex != -1) {
+                val newMessages = oldConversation.messages.toMutableList()
+                val oldMessage = newMessages[messageIndex]
+                val newMessage = oldMessage.copy(isThinkingExpanded = !oldMessage.isThinkingExpanded)
+                newMessages[messageIndex] = newMessage
+                val updatedConversation = oldConversation.copy(messages = newMessages)
+                updatedConversations[conversationIndex] = updatedConversation
+                _conversations.value = updatedConversations
+                if (conversationId == _activeConversationId.value) {
+                    _messages.value = newMessages
+                }
+                saveConversations()
+            }
+        }
+    }
+
     fun renameConversation(conversationId: String, newTitle: String) {
         val conversationIndex = _conversations.value.indexOfFirst { it.id == conversationId }
         if (conversationIndex != -1) {
@@ -676,6 +698,7 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                             }
 
                             var firstChunk = true
+                            var rawBuffer = ""
                             responseStream.use {
                                 var line: String?
                                 while (true) {
@@ -689,7 +712,15 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
 
                                     try {
                                         val ollamaResponse = json.decodeFromString<OllamaResponse>(line)
-                                        ollamaMessage = ollamaMessage.copy(content = ollamaMessage.content + ollamaResponse.response)
+                                        rawBuffer += ollamaResponse.response
+                                        val (thinking, mainContent, thinkingDone) = extractThinkingContent(rawBuffer)
+                                        ollamaMessage = ollamaMessage.copy(
+                                            content = mainContent,
+                                            thinkingContent = thinking,
+                                            isThinkingDone = thinkingDone,
+                                            // Auto-collapse when thinking is done, keep expanded while streaming
+                                            isThinkingExpanded = !thinkingDone
+                                        )
                                         withContext(Dispatchers.Main) {
                                             updateLastMessageInConversation(conversationId, ollamaMessage)
                                         }
@@ -743,6 +774,7 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                             }
 
                             var firstChunk = true
+                            var rawBuffer = ""
                             responseStream.use {
                                 var line: String?
                                 while (true) {
@@ -763,9 +795,34 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
 
                                     try {
                                         val openAIResponse = json.decodeFromString<OpenAIStreamResponse>(data)
-                                        val delta = openAIResponse.choices?.firstOrNull()?.delta?.content ?: ""
-                                        ollamaMessage = ollamaMessage.copy(content = ollamaMessage.content + delta)
-                                        
+                                        val deltaObj = openAIResponse.choices?.firstOrNull()?.delta
+                                        val deltaContent = deltaObj?.content ?: ""
+                                        val deltaReasoning = deltaObj?.reasoningContent ?: ""
+
+                                        if (deltaReasoning.isNotEmpty()) {
+                                            // Backend provides reasoning_content separately (e.g. DeepSeek API)
+                                            // Accumulate reasoning and content independently
+                                            val currentThinking = (ollamaMessage.thinkingContent ?: "") + deltaReasoning
+                                            rawBuffer += deltaContent
+                                            ollamaMessage = ollamaMessage.copy(
+                                                content = rawBuffer,
+                                                thinkingContent = currentThinking,
+                                                isThinkingDone = false, // will be set done when content starts flowing
+                                                isThinkingExpanded = rawBuffer.isBlank() // expanded while no content yet
+                                            )
+                                        } else {
+                                            // Backend embeds <think> tags inside content (e.g. Ollama /v1)
+                                            rawBuffer += deltaContent
+                                            val (thinking, mainContent, thinkingDone) = extractThinkingContent(rawBuffer)
+                                            ollamaMessage = ollamaMessage.copy(
+                                                content = mainContent,
+                                                thinkingContent = thinking,
+                                                isThinkingDone = thinkingDone,
+                                                // Auto-collapse when thinking is done, keep expanded while streaming
+                                                isThinkingExpanded = !thinkingDone
+                                            )
+                                        }
+
                                         if (openAIResponse.usage != null) {
                                             ollamaMessage = ollamaMessage.copy(performance = formatOpenAIUsage(openAIResponse.usage))
                                         }
@@ -834,9 +891,24 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
             val oldConversation = updatedConversations[conversationIndex]
             val newMessages = oldConversation.messages.toMutableList().apply {
                 if (isNotEmpty()) {
+                    // Preserve user-controlled UI state from the existing last message
+                    val lastMsg = last()
+                    val preserved = message.copy(
+                        isExpanded = lastMsg.isExpanded,
+                        // Preserve isThinkingExpanded only if user has already manually toggled it
+                        // after thinking was done (lastMsg.isThinkingDone == true).
+                        // While still streaming, always follow the new message's computed value.
+                        isThinkingExpanded = if (lastMsg.isThinkingDone && message.isThinkingDone) {
+                            lastMsg.isThinkingExpanded
+                        } else {
+                            message.isThinkingExpanded
+                        }
+                    )
                     removeAt(lastIndex)
+                    add(preserved)
+                } else {
+                    add(message)
                 }
-                add(message)
             }
             val updatedConversation = oldConversation.copy(messages = newMessages)
             updatedConversations[conversationIndex] = updatedConversation
@@ -1123,6 +1195,39 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
 
     private fun formatOpenAIUsage(usage: OpenAIUsage): String {
         return "Prompt: ${usage.prompt_tokens ?: 0} tokens, Response: ${usage.completion_tokens ?: 0} tokens, Total: ${usage.total_tokens ?: 0} tokens"
+    }
+
+    /**
+     * Extracts thinking content from <think>...</think> or <thinking>...</thinking> tags.
+     * Returns a Triple of (thinkingContent, mainContent, isThinkingDone).
+     * - isThinkingDone = false: still streaming inside <think> block
+     * - isThinkingDone = true: closing tag received, thinking complete
+     * Handles incomplete tags during streaming gracefully.
+     * Case-insensitive matching for broader model compatibility.
+     */
+    private fun extractThinkingContent(raw: String): Triple<String?, String, Boolean> {
+        // Support both <think> and <thinking> variants, case-insensitive
+        val openRegex = Regex("<think(?:ing)?>")
+        val openMatch = openRegex.find(raw)
+        if (openMatch == null) {
+            // No thinking tag at all
+            return Triple(null, raw, false)
+        }
+        val contentStart = openMatch.range.last + 1
+        val closeTag = "</think"
+        val closeIdx = raw.indexOf(closeTag, contentStart)
+        return if (closeIdx == -1) {
+            // Opening tag found but closing tag not yet received (still streaming)
+            val thinkingInProgress = raw.substring(contentStart)
+            Triple(thinkingInProgress, "", false)
+        } else {
+            // Find the end of the closing tag (handle </think> and </thinking>)
+            val closeEnd = raw.indexOf('>', closeIdx)
+            val endIdx = if (closeEnd != -1) closeEnd + 1 else closeIdx + 8
+            val thinking = raw.substring(contentStart, closeIdx).trim()
+            val main = raw.substring(endIdx).trimStart()
+            Triple(thinking.ifBlank { null }, main, true)
+        }
     }
 
     private fun getCurrentTimestamp(): String {

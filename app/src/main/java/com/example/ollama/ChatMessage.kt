@@ -17,6 +17,9 @@ data class ChatMessage(
     val fileName: String? = null,
     val performance: String? = null,
     val isExpanded: Boolean = true,
+    val thinkingContent: String? = null,
+    val isThinkingExpanded: Boolean = true,
+    val isThinkingDone: Boolean = false,
     @Transient
     val images: List<String>? = null
 )

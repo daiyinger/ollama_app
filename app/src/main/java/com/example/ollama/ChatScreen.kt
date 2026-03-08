@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -300,6 +301,11 @@ fun ChatScreen(
                             if (conversationId != null) {
                                 viewModel.toggleMessageExpanded(conversationId, it)
                             }
+                        },
+                        onThinkingClick = {
+                            if (conversationId != null) {
+                                viewModel.toggleThinkingExpanded(conversationId, it)
+                            }
                         }
                     )
                 }
@@ -563,12 +569,91 @@ fun DeleteConfirmationDialog(
     )
 }
 
+@Composable
+fun ThinkingBlock(
+    thinkingContent: String,
+    isExpanded: Boolean,
+    isDone: Boolean,
+    onToggle: () -> Unit
+) {
+    val charCount = thinkingContent.length
+    val scrollState = rememberScrollState()
+
+    // Auto-scroll to bottom while streaming
+    LaunchedEffect(thinkingContent) {
+        if (!isDone) {
+            scrollState.animateScrollTo(scrollState.maxValue)
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+    ) {
+        // Header row: clickable to expand/collapse
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onToggle() }
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Icon(
+                    imageVector = Icons.Default.Lightbulb,
+                    contentDescription = "Thinking",
+                    modifier = Modifier.size(14.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = if (!isDone) "思考中…" else "思考过程",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (charCount > 0) {
+                    Text(
+                        text = "($charCount 字)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    )
+                }
+            }
+            Icon(
+                imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = if (isExpanded) "Collapse" else "Expand",
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        // Expanded content with max height and scroll
+        if (isExpanded && thinkingContent.isNotBlank()) {
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f),
+                thickness = 0.5.dp
+            )
+            Text(
+                text = thinkingContent,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .heightIn(max = 200.dp)
+                    .verticalScroll(scrollState)
+                    .padding(horizontal = 10.dp, vertical = 8.dp)
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MessageBubble(
     message: ChatMessage,
     onImageClick: (Uri) -> Unit,
-    onMessageClick: (ChatMessage) -> Unit
+    onMessageClick: (ChatMessage) -> Unit,
+    onThinkingClick: (ChatMessage) -> Unit = {}
 ) {
     val isUserMessage = message.sender.equals("You", ignoreCase = true)
     val arrangement = if (isUserMessage) Arrangement.End else Arrangement.Start
@@ -591,6 +676,16 @@ fun MessageBubble(
             SelectionContainer {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     AttachmentView(message = message, onImageClick = onImageClick)
+
+                    // Thinking process section
+                    if (message.thinkingContent != null) {
+                        ThinkingBlock(
+                            thinkingContent = message.thinkingContent,
+                            isExpanded = message.isThinkingExpanded,
+                            isDone = message.isThinkingDone,
+                            onToggle = { onThinkingClick(message) }
+                        )
+                    }
 
                     if (message.isExpanded) {
                         val parts = message.content.split("```")
