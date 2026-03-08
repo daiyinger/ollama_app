@@ -794,10 +794,15 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                                     }
 
                                     try {
+                                        Log.d("MainViewModel", "Raw SSE data: $data")
                                         val openAIResponse = json.decodeFromString<OpenAIStreamResponse>(data)
+                                        Log.d("MainViewModel", "Parsed response: choices=${openAIResponse.choices}")
                                         val deltaObj = openAIResponse.choices?.firstOrNull()?.delta
+                                        Log.d("MainViewModel", "Delta object: content=${deltaObj?.content}, reasoningContent=${deltaObj?.reasoningContent}, thinking=${deltaObj?.thinking}, reasoning=${deltaObj?.reasoning}")
                                         val deltaContent = deltaObj?.content ?: ""
-                                        val deltaReasoning = deltaObj?.reasoningContent ?: ""
+                                        val deltaReasoning = deltaObj?.getReasoningOrThinking() ?: ""
+
+                                        Log.d("MainViewModel", "OpenAI delta - content: '${deltaContent.take(50)}', reasoning/thinking: '${deltaReasoning.take(50)}', currentThinking: '${ollamaMessage.thinkingContent?.take(50)}'")
 
                                         if (deltaReasoning.isNotEmpty()) {
                                             // Backend provides reasoning_content separately (e.g. DeepSeek API)
@@ -810,6 +815,17 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                                                 isThinkingDone = false, // will be set done when content starts flowing
                                                 isThinkingExpanded = rawBuffer.isBlank() // expanded while no content yet
                                             )
+                                            Log.d("MainViewModel", "Updated thinkingContent: '${currentThinking.take(50)}...'")
+                                        } else if (ollamaMessage.thinkingContent != null && deltaContent.isNotEmpty()) {
+                                            // Thinking was in progress but now content started flowing
+                                            // Mark thinking as done
+                                            rawBuffer += deltaContent
+                                            ollamaMessage = ollamaMessage.copy(
+                                                content = rawBuffer,
+                                                isThinkingDone = true,
+                                                isThinkingExpanded = false
+                                            )
+                                            Log.d("MainViewModel", "Thinking done, content started: '${rawBuffer.take(50)}...'")
                                         } else {
                                             // Backend embeds <think> tags inside content (e.g. Ollama /v1)
                                             rawBuffer += deltaContent
@@ -962,9 +978,28 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                     "OpenAI API 兼容" -> {
                         val messages = listOf(OpenAIRequestMessage(role = "user", content = listOf(OpenAITextContent(text = titlePrompt))))
-                        val request = OpenAIRequest(model = profile.model, messages = messages)
-                        val response = ollamaApi.generateOpenAI(url = url, request = request)
-                        val title = response.choices.firstOrNull()?.message?.content?.trim()?.replace("\"", "") ?: "Untitled"
+                        val request = OpenAIRequest(model = profile.model, messages = messages, stream = true)
+                        val responseBody = ollamaApi.generateOpenAIStream(url = url, request = request)
+                        val responseStream = responseBody.byteStream().bufferedReader()
+                        val titleBuilder = StringBuilder()
+                        responseStream.use {
+                            var line: String?
+                            while (true) {
+                                line = it.readLine()
+                                if (line == null) break
+                                if (!line.startsWith("data:")) continue
+                                val data = line.substringAfter("data: ").trim()
+                                if (data == "[DONE]") break
+                                try {
+                                    val openAIResponse = json.decodeFromString<OpenAIStreamResponse>(data)
+                                    val deltaContent = openAIResponse.choices?.firstOrNull()?.delta?.content ?: ""
+                                    titleBuilder.append(deltaContent)
+                                } catch (e: Exception) {
+                                    Log.e("MainViewModel", "Error parsing title stream line: $line", e)
+                                }
+                            }
+                        }
+                        val title = titleBuilder.toString().trim().replace("\"", "").ifBlank { "Untitled" }
                         withContext(Dispatchers.Main) {
                             updateConversationTitle(conversationId, title)
                         }

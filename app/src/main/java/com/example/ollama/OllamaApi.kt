@@ -110,8 +110,15 @@ data class OpenAIStreamChoice(
 data class OpenAIStreamDelta(
     val content: String? = null,
     @SerialName("reasoning_content")
-    val reasoningContent: String? = null
-)
+    val reasoningContent: String? = null,
+    @SerialName("thinking")
+    val thinking: String? = null,
+    @SerialName("reasoning")
+    val reasoning: String? = null
+) {
+    /** Get reasoning/thinking content from any field */
+    fun getReasoningOrThinking(): String? = reasoningContent ?: thinking ?: reasoning
+}
 
 @Serializable
 data class OpenAIStreamResponse(
