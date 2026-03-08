@@ -19,7 +19,8 @@ data class OllamaRequest(
     val prompt: String,
     val stream: Boolean = false,
     val images: List<String>? = null,
-    val options: Map<String, Int>? = null
+    val options: Map<String, Int>? = null,
+    val system: String? = null
 )
 
 /** Response from the standard Ollama API */

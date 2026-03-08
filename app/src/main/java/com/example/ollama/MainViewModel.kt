@@ -103,6 +103,7 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
 
     val profiles: StateFlow<List<OllamaProfile>> = settingsManager.getProfilesFlow()
     val activeProfile: StateFlow<OllamaProfile?> = settingsManager.getActiveProfileFlow()
+    val systemPrompts: StateFlow<List<SystemPrompt>> = settingsManager.getSystemPromptsFlow()
 
     private val _enableSessionLogging = MutableStateFlow(false)
     val enableSessionLogging: StateFlow<Boolean> = _enableSessionLogging.asStateFlow()
@@ -219,6 +220,29 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
     fun setEnableSessionLogging(enabled: Boolean) {
         settingsManager.setEnableSessionLogging(enabled)
         _enableSessionLogging.value = enabled
+    }
+
+    fun addSystemPrompt(systemPrompt: SystemPrompt) {
+        settingsManager.addSystemPrompt(systemPrompt)
+    }
+
+    fun updateSystemPrompt(systemPrompt: SystemPrompt) {
+        settingsManager.updateSystemPrompt(systemPrompt)
+    }
+
+    fun deleteSystemPrompt(id: String) {
+        settingsManager.deleteSystemPrompt(id)
+    }
+
+    fun setSystemPromptForConversation(conversationId: String, systemPromptId: String?) {
+        val conversationIndex = _conversations.value.indexOfFirst { it.id == conversationId }
+        if (conversationIndex != -1) {
+            val updatedConversations = _conversations.value.toMutableList()
+            val updatedConversation = updatedConversations[conversationIndex].copy(systemPromptId = systemPromptId)
+            updatedConversations[conversationIndex] = updatedConversation
+            _conversations.value = updatedConversations
+            saveConversations()
+        }
     }
 
     fun setExpandedGroups(groups: Set<String>) {
@@ -682,11 +706,15 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                     when (profile.apiMode) {
                         "Ollama" -> {
                             updateConversationInferenceStatus(conversationId, "Sending...")
+                            val systemPromptContent = conversation.systemPromptId?.let { id ->
+                                systemPrompts.value.find { it.id == id }?.content
+                            }
                             val request = OllamaRequest(
                                 model = profile.model,
                                 prompt = finalPrompt,
                                 stream = true,
-                                images = imagesBase64
+                                images = imagesBase64,
+                                system = systemPromptContent
                             )
                             val responseBody = ollamaApi.generateOllamaStream(url = url, request = request.copy(options = mapOf("num_ctx" to profile.contextLength)))
                             updateConversationInferenceStatus(conversationId, "Waiting for response...")
@@ -750,13 +778,22 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                                 OpenAIRequestMessage(role = role, content = content)
                             }
 
+                            val systemPromptContent = conversation.systemPromptId?.let { id ->
+                                systemPrompts.value.find { it.id == id }?.content
+                            }
+                            val systemMessages = if (!systemPromptContent.isNullOrBlank()) {
+                                listOf(OpenAIRequestMessage(role = "system", content = listOf(OpenAITextContent(text = systemPromptContent))))
+                            } else {
+                                emptyList()
+                            }
+
                             val content = mutableListOf<OpenAIContent>()
                             content.add(OpenAITextContent(text = finalPrompt))
                             imagesBase64?.forEach {
                                 val imageUrl = "data:image/jpeg;base64,$it"
                                 content.add(OpenAIImageContent(image_url = OpenAIImageUrl(url = imageUrl)))
                             }
-                            val messages = previousMessages + listOf(OpenAIRequestMessage(role = "user", content = content))
+                            val messages = systemMessages + previousMessages + listOf(OpenAIRequestMessage(role = "user", content = content))
                             val request = OpenAIRequest(
                                 model = profile.model,
                                 messages = messages,

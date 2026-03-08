@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -88,7 +89,10 @@ fun SettingsScreen(
     val profiles by viewModel.profiles.collectAsState()
     val activeProfile by viewModel.activeProfile.collectAsState()
     val logFiles by viewModel.logFiles.collectAsState()
+    val systemPrompts by viewModel.systemPrompts.collectAsState()
     var showLogFilesDialog by remember { mutableStateOf(false) }
+    var showSystemPromptDialog by remember { mutableStateOf<SystemPrompt?>(null) } // null=closed, SystemPrompt(id="")=new
+    var showDeleteSystemPromptDialog by remember { mutableStateOf<SystemPrompt?>(null) }
 
     var selectedProfile by remember(activeProfile) { mutableStateOf(activeProfile ?: SettingsManager.defaultProfile) }
     var name by remember(selectedProfile) { mutableStateOf(selectedProfile.name) }
@@ -272,6 +276,40 @@ fun SettingsScreen(
                         onNavigateBack()
                     }
                 ) { Text("放弃") }
+            }
+        )
+    }
+
+    // 系统提示词编辑/新增对话框
+    showSystemPromptDialog?.let { editingSp ->
+        SystemPromptEditDialog(
+            systemPrompt = editingSp,
+            onDismiss = { showSystemPromptDialog = null },
+            onSave = { sp ->
+                if (sp.id.isEmpty()) {
+                    viewModel.addSystemPrompt(sp.copy(id = java.util.UUID.randomUUID().toString()))
+                } else {
+                    viewModel.updateSystemPrompt(sp)
+                }
+                showSystemPromptDialog = null
+            }
+        )
+    }
+
+    // 系统提示词删除确认对话框
+    showDeleteSystemPromptDialog?.let { sp ->
+        AlertDialog(
+            onDismissRequest = { showDeleteSystemPromptDialog = null },
+            title = { Text("删除系统提示词") },
+            text = { Text("确认删除「${sp.name}」吗？") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteSystemPrompt(sp.id)
+                    showDeleteSystemPromptDialog = null
+                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteSystemPromptDialog = null }) { Text("取消") }
             }
         )
     }
@@ -569,6 +607,54 @@ fun SettingsScreen(
                         )
                     }
                 }
+                // 系统提示词管理
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(text = "系统提示词", style = MaterialTheme.typography.titleMedium)
+                            IconButton(onClick = {
+                                showSystemPromptDialog = SystemPrompt(id = "", name = "", content = "")
+                            }) {
+                                Icon(Icons.Filled.Add, contentDescription = "新增系统提示词")
+                            }
+                        }
+                        if (systemPrompts.isEmpty()) {
+                            Text(
+                                text = "暂无系统提示词，点击右上角 + 添加",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            systemPrompts.forEach { sp ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { showSystemPromptDialog = sp }
+                                        .padding(vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(text = sp.name, style = MaterialTheme.typography.bodyMedium)
+                                        Text(
+                                            text = sp.content,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    IconButton(onClick = { showDeleteSystemPromptDialog = sp }) {
+                                        Icon(Icons.Filled.Delete, contentDescription = "删除", tint = MaterialTheme.colorScheme.error)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 TextField(
                     value = psPath,
                     onValueChange = { psPath = it },
@@ -711,6 +797,71 @@ fun OllamaTagsDialog(viewModel: MainViewModel, onDismiss: () -> Unit) {
                             )
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SystemPromptEditDialog(
+    systemPrompt: SystemPrompt,
+    onDismiss: () -> Unit,
+    onSave: (SystemPrompt) -> Unit
+) {
+    var name by remember { mutableStateOf(systemPrompt.name) }
+    var content by remember { mutableStateOf(systemPrompt.content) }
+    val isNew = systemPrompt.id.isEmpty()
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            shape = MaterialTheme.shapes.large
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = if (isNew) "新增系统提示词" else "编辑系统提示词",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                TextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("名称") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                TextField(
+                    value = content,
+                    onValueChange = { content = it },
+                    label = { Text("系统提示词内容") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 120.dp),
+                    minLines = 4,
+                    maxLines = 10
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = onDismiss) { Text("取消") }
+                    Spacer(modifier = Modifier.padding(4.dp))
+                    Button(
+                        onClick = {
+                            if (name.isNotBlank()) {
+                                onSave(systemPrompt.copy(name = name.trim(), content = content.trim()))
+                            }
+                        },
+                        enabled = name.isNotBlank()
+                    ) { Text("保存") }
                 }
             }
         }

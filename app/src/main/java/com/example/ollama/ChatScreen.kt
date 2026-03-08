@@ -93,6 +93,7 @@ fun ChatScreen(
     val conversation = viewModel.conversations.collectAsState().value.find { it.id == conversationId }
     val profiles by viewModel.profiles.collectAsState()
     val activeProfile by viewModel.activeProfile.collectAsState()
+    val systemPrompts by viewModel.systemPrompts.collectAsState()
     val coroutineScope = rememberCoroutineScope()
     var enlargedImageUri by remember { mutableStateOf<Uri?>(null) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -234,6 +235,13 @@ fun ChatScreen(
                 isProcessingPdf = isProcessingPdf,
                 onStopPdfProcessing = {
                     conversationId?.let { viewModel.stopPdfProcessing(it) }
+                },
+                systemPrompts = systemPrompts,
+                activeSystemPromptId = conversation?.systemPromptId,
+                onSystemPromptSelected = { spId ->
+                    if (conversationId != null) {
+                        viewModel.setSystemPromptForConversation(conversationId, spId)
+                    }
                 }
             )
         }
@@ -737,9 +745,13 @@ fun ChatInputBar(
     activeProfile: OllamaProfile?,
     onProfileSelected: (OllamaProfile) -> Unit,
     isProcessingPdf: Boolean,
-    onStopPdfProcessing: () -> Unit
+    onStopPdfProcessing: () -> Unit,
+    systemPrompts: List<SystemPrompt> = emptyList(),
+    activeSystemPromptId: String? = null,
+    onSystemPromptSelected: (String?) -> Unit = {}
 ) {
     var expanded by remember { mutableStateOf(false) }
+    var systemPromptExpanded by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     Surface(
@@ -830,7 +842,7 @@ fun ChatInputBar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.Center,
+                horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
@@ -866,6 +878,73 @@ fun ChatInputBar(
                                 )
                             }
                         )
+                    }
+                }
+                // 系统提示词选择器
+                if (systemPrompts.isNotEmpty()) {
+                    val activeSpName = systemPrompts.find { it.id == activeSystemPromptId }?.name
+                    Row(
+                        modifier = Modifier
+                            .clickable { systemPromptExpanded = true }
+                            .padding(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "系统提示词",
+                            modifier = Modifier.size(16.dp),
+                            tint = if (activeSystemPromptId != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = activeSpName ?: "无提示词",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (activeSystemPromptId != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 4.dp)
+                        )
+                        Icon(
+                            imageVector = Icons.Default.ArrowDropDown,
+                            contentDescription = "Dropdown",
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = systemPromptExpanded,
+                        onDismissRequest = { systemPromptExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("不使用系统提示词") },
+                            onClick = {
+                                onSystemPromptSelected(null)
+                                systemPromptExpanded = false
+                            },
+                            leadingIcon = {
+                                RadioButton(
+                                    selected = activeSystemPromptId == null,
+                                    onClick = {
+                                        onSystemPromptSelected(null)
+                                        systemPromptExpanded = false
+                                    }
+                                )
+                            }
+                        )
+                        systemPrompts.forEach { sp ->
+                            DropdownMenuItem(
+                                text = { Text(sp.name) },
+                                onClick = {
+                                    onSystemPromptSelected(sp.id)
+                                    systemPromptExpanded = false
+                                },
+                                leadingIcon = {
+                                    RadioButton(
+                                        selected = sp.id == activeSystemPromptId,
+                                        onClick = {
+                                            onSystemPromptSelected(sp.id)
+                                            systemPromptExpanded = false
+                                        }
+                                    )
+                                }
+                            )
+                        }
                     }
                 }
             }

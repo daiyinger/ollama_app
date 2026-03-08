@@ -11,5 +11,6 @@ data class Conversation(
     val inferenceStatus: String = "",
     val pdfProcessingStatus: PdfProcessingStatus? = null,
     val profileName: String? = null,
-    val createdAt: Long = 0
+    val createdAt: Long = 0,
+    val systemPromptId: String? = null
 )

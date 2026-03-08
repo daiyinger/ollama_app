@@ -29,10 +29,18 @@ data class OllamaProfile(
 )
 
 @Serializable
+data class SystemPrompt(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val name: String,
+    val content: String
+)
+
+@Serializable
 data class AppSettings(
     val profiles: List<OllamaProfile>,
     val activeProfileName: String?,
-    val enableSessionLogging: Boolean
+    val enableSessionLogging: Boolean,
+    val systemPrompts: List<SystemPrompt> = emptyList()
 )
 
 class SettingsManager(context: Context) {
@@ -45,6 +53,7 @@ class SettingsManager(context: Context) {
         const val KEY_CONVERSATIONS = "conversations"
         const val KEY_ENABLE_SESSION_LOGGING = "enable_session_logging"
         const val KEY_EXPANDED_GROUPS = "expanded_groups"
+        const val KEY_SYSTEM_PROMPTS = "system_prompts"
 
         val defaultProfile = OllamaProfile(
             name = "Default",
@@ -66,6 +75,7 @@ class SettingsManager(context: Context) {
 
     private val _profilesFlow = MutableStateFlow<List<OllamaProfile>>(emptyList())
     private val _activeProfileFlow = MutableStateFlow<OllamaProfile?>(null)
+    private val _systemPromptsFlow = MutableStateFlow<List<SystemPrompt>>(emptyList())
 
     init {
         val profiles = getProfiles()
@@ -83,10 +93,12 @@ class SettingsManager(context: Context) {
             saveProfiles(newProfiles)
             setActiveProfile(defaultProfile.name)
         }
+        _systemPromptsFlow.value = getSystemPrompts()
     }
 
     fun getProfilesFlow(): StateFlow<List<OllamaProfile>> = _profilesFlow.asStateFlow()
     fun getActiveProfileFlow(): StateFlow<OllamaProfile?> = _activeProfileFlow.asStateFlow()
+    fun getSystemPromptsFlow(): StateFlow<List<SystemPrompt>> = _systemPromptsFlow.asStateFlow()
 
     fun getProfiles(): List<OllamaProfile> {
         val jsonString = prefs.getString(KEY_PROFILES, null)
@@ -168,6 +180,46 @@ class SettingsManager(context: Context) {
         return prefs.getBoolean(KEY_ENABLE_SESSION_LOGGING, true)
     }
 
+    fun getSystemPrompts(): List<SystemPrompt> {
+        val jsonString = prefs.getString(KEY_SYSTEM_PROMPTS, null)
+        return if (jsonString != null) {
+            try {
+                json.decodeFromString<List<SystemPrompt>>(jsonString)
+            } catch (e: Exception) {
+                emptyList()
+            }
+        } else {
+            emptyList()
+        }
+    }
+
+    fun saveSystemPrompts(systemPrompts: List<SystemPrompt>) {
+        val jsonString = json.encodeToString(systemPrompts)
+        prefs.edit().putString(KEY_SYSTEM_PROMPTS, jsonString).apply()
+        _systemPromptsFlow.value = systemPrompts
+    }
+
+    fun addSystemPrompt(systemPrompt: SystemPrompt) {
+        val current = getSystemPrompts().toMutableList()
+        current.add(systemPrompt)
+        saveSystemPrompts(current)
+    }
+
+    fun updateSystemPrompt(systemPrompt: SystemPrompt) {
+        val current = getSystemPrompts().toMutableList()
+        val index = current.indexOfFirst { it.id == systemPrompt.id }
+        if (index != -1) {
+            current[index] = systemPrompt
+            saveSystemPrompts(current)
+        }
+    }
+
+    fun deleteSystemPrompt(id: String) {
+        val current = getSystemPrompts().toMutableList()
+        current.removeAll { it.id == id }
+        saveSystemPrompts(current)
+    }
+
     fun saveExpandedGroups(groups: Set<String>) {
         // SharedPreferences.putStringSet is known to have issues when the same set is modified and saved.
         // It's safer to create a new HashSet or use a comma-separated string if simple set doesn't work.
@@ -187,7 +239,8 @@ class SettingsManager(context: Context) {
         val appSettings = AppSettings(
             profiles = profiles,
             activeProfileName = activeProfileName,
-            enableSessionLogging = enableSessionLogging
+            enableSessionLogging = enableSessionLogging,
+            systemPrompts = getSystemPrompts()
         )
         return json.encodeToString(appSettings)
     }
@@ -198,6 +251,7 @@ class SettingsManager(context: Context) {
             saveProfiles(appSettings.profiles)
             setActiveProfile(appSettings.activeProfileName)
             setEnableSessionLogging(appSettings.enableSessionLogging)
+            saveSystemPrompts(appSettings.systemPrompts)
 
             // After import, we need to reload the profiles and active profile.
             val profiles = getProfiles()
