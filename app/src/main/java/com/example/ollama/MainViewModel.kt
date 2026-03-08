@@ -794,15 +794,10 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                                     }
 
                                     try {
-                                        Log.d("MainViewModel", "Raw SSE data: $data")
                                         val openAIResponse = json.decodeFromString<OpenAIStreamResponse>(data)
-                                        Log.d("MainViewModel", "Parsed response: choices=${openAIResponse.choices}")
                                         val deltaObj = openAIResponse.choices?.firstOrNull()?.delta
-                                        Log.d("MainViewModel", "Delta object: content=${deltaObj?.content}, reasoningContent=${deltaObj?.reasoningContent}, thinking=${deltaObj?.thinking}, reasoning=${deltaObj?.reasoning}")
                                         val deltaContent = deltaObj?.content ?: ""
                                         val deltaReasoning = deltaObj?.getReasoningOrThinking() ?: ""
-
-                                        Log.d("MainViewModel", "OpenAI delta - content: '${deltaContent.take(50)}', reasoning/thinking: '${deltaReasoning.take(50)}', currentThinking: '${ollamaMessage.thinkingContent?.take(50)}'")
 
                                         if (deltaReasoning.isNotEmpty()) {
                                             // Backend provides reasoning_content separately (e.g. DeepSeek API)
@@ -911,13 +906,13 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                     val lastMsg = last()
                     val preserved = message.copy(
                         isExpanded = lastMsg.isExpanded,
-                        // Preserve isThinkingExpanded only if user has already manually toggled it
-                        // after thinking was done (lastMsg.isThinkingDone == true).
-                        // While still streaming, always follow the new message's computed value.
-                        isThinkingExpanded = if (lastMsg.isThinkingDone && message.isThinkingDone) {
-                            lastMsg.isThinkingExpanded
+                        // Preserve isThinkingExpanded if user has manually toggled it.
+                        // User toggle happens when lastMsg.isThinkingExpanded != message.isThinkingExpanded
+                        // (message's value is computed from streaming logic, lastMsg has user's preference)
+                        isThinkingExpanded = if (lastMsg.isThinkingExpanded != message.isThinkingExpanded) {
+                            lastMsg.isThinkingExpanded  // User manually toggled, preserve their choice
                         } else {
-                            message.isThinkingExpanded
+                            message.isThinkingExpanded  // No user intervention, use computed value
                         }
                     )
                     removeAt(lastIndex)
