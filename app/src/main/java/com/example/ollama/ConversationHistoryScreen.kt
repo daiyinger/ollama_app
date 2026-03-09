@@ -783,9 +783,19 @@ fun ModelDetailsDialog(
                         Text("Model Architecture", style = MaterialTheme.typography.titleMedium)
                         Spacer(modifier = Modifier.padding(4.dp))
                     }
-                    architectureParams.entries.sortedBy { (key, _) -> key }.forEach { (key, value) ->
+                    // Sort with context_length first, then alphabetically
+                    architectureParams.entries.sortedWith(
+                        compareBy({ it.key != "context_length" }, { it.key })
+                    ).forEach { (key, value) ->
                         item { 
-                            Text("$key: $value", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                text = if (value % 1 == 0f) {
+                                    "$key: ${value.toInt()}"
+                                } else {
+                                    "$key: ${String.format("%.1f", value)}"
+                                },
+                                style = MaterialTheme.typography.bodyMedium
+                            )
                         }
                     }
                 }
