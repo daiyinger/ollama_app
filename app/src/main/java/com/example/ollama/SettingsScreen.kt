@@ -819,7 +819,14 @@ fun ModelDetailsDialog(viewModel: MainViewModel) {
                             Text(text = "Parameters", style = MaterialTheme.typography.titleMedium)
                             Spacer(modifier = Modifier.padding(4.dp))
                             runtimeParams?.entries?.sortedBy { (key, _) -> key }?.forEach { (key, value) ->
-                                Text(text = "$key: $value", style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    text = if (value % 1 == 0f) {
+                                        "$key: ${value.toInt()}"
+                                    } else {
+                                        "$key: ${String.format("%.1f", value)}"
+                                    },
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
                             }
                         }
                     }

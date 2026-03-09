@@ -146,7 +146,7 @@ data class ShowRequest(
 @Serializable
 data class ShowResponse(
     val details: OllamaPsModelDetails,
-    val parameters: Map<String, Int>? = null,
+    val parameters: Map<String, Float>? = null,
     val capabilities: List<String>? = null
 )
 

@@ -490,7 +490,7 @@ fun ConversationListItem(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 10.dp, horizontal = 12.dp),
+                .padding(vertical = 6.dp, horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             // Checkbox 仅在多选模式下显示
@@ -512,8 +512,15 @@ fun ConversationListItem(
             // 三点菜单按钮 - 仅在非多选模式显示
             AnimatedVisibility(visible = !isMultiSelectMode) {
                 Box {
-                    IconButton(onClick = { showMenu = true }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "更多选项", modifier = Modifier.size(20.dp))
+                    IconButton(
+                        onClick = { showMenu = true },
+                        modifier = Modifier.size(32.dp) // 减小 IconButton 尺寸
+                    ) {
+                        Icon(
+                            Icons.Default.MoreVert,
+                            contentDescription = "更多选项",
+                            modifier = Modifier.size(18.dp) // 减小图标尺寸
+                        )
                     }
                     DropdownMenu(
                         expanded = showMenu,
@@ -799,7 +806,16 @@ fun ModelDetailsDialog(
                             Spacer(modifier = Modifier.padding(4.dp))
                         }
                         runtimeParams?.entries?.sortedBy { (key, _) -> key }?.forEach { (key, value) ->
-                            item { Text("$key: $value", style = MaterialTheme.typography.bodyMedium) }
+                            item { 
+                                Text(
+                                    text = if (value % 1 == 0f) {
+                                        "$key: ${value.toInt()}"
+                                    } else {
+                                        "$key: ${String.format("%.1f", value)}"
+                                    },
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                            }
                         }
                     }
                 }

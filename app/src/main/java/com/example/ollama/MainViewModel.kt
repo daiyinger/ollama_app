@@ -1231,7 +1231,7 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                             ?.mapNotNull { it: kotlinx.serialization.json.JsonElement -> (it as? JsonPrimitive)?.contentOrNull }
                         
                         // Extract parameters from both root level and details with wildcard matching
-                        val rawParameters = mutableMapOf<String, Int>()
+                        val rawParameters = mutableMapOf<String, Float>()
                         
                         // 1. Try to extract from root-level parameters object
                         val parametersObj = jsonObject["parameters"] as? kotlinx.serialization.json.JsonObject
@@ -1239,16 +1239,44 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                             Log.d("MainViewModel", "Found parameters object: ${parametersObj.keys}")
                             parametersObj.forEach { (key, value) ->
                                 Log.d("MainViewModel", "  Parameter $key = $value")
-                                val intValue = when (value) {
-                                    is JsonPrimitive -> value.contentOrNull?.toIntOrNull()
+                                val floatValue = when (value) {
+                                    is JsonPrimitive -> value.contentOrNull?.toFloatOrNull()
                                     else -> null
                                 }
-                                if (intValue != null) {
-                                    rawParameters[key] = intValue
+                                if (floatValue != null) {
+                                    rawParameters[key] = floatValue
                                 }
                             }
                         } else {
                             Log.d("MainViewModel", "No parameters object found at root level")
+                            
+                            // Try to parse parameters as a string (newline-separated key-value pairs)
+                            val parametersStr = jsonObject["parameters"]?.toString()?.trim('"')
+                            if (!parametersStr.isNullOrBlank()) {
+                                Log.d("MainViewModel", "Found parameters as string: $parametersStr")
+                                
+                                // Replace literal \n with actual newlines, then split
+                                val normalizedStr = parametersStr.replace("\\n", "\n")
+                                Log.d("MainViewModel", "Normalized string: $normalizedStr")
+                                
+                                val lines = normalizedStr.split("\n").filter { it.isNotBlank() }
+                                Log.d("MainViewModel", "Split into ${lines.size} lines: $lines")
+                                
+                                lines.forEach { line ->
+                                    val parts = line.trim().split(Regex("\\s+"), limit = 2)
+                                    if (parts.size == 2) {
+                                        val key = parts[0].trim()
+                                        val valueStr = parts[1].trim()
+                                        val floatValue = valueStr.toFloatOrNull()
+                                        if (floatValue != null) {
+                                            rawParameters[key] = floatValue
+                                            Log.d("MainViewModel", "  Parsed parameter: $key = $floatValue")
+                                        } else {
+                                            Log.d("MainViewModel", "  Skipping non-numeric parameter: $key = $valueStr")
+                                        }
+                                    }
+                                }
+                            }
                         }
                         
                         // 2. Search for context_length and other numeric fields in model_info object
@@ -1299,14 +1327,14 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                             extractWildcardValueFromRoot(jsonObject, "image_token_id")
                         }
                         
-                        // Add extracted wildcard values to parameters map
-                        if (contextLength != null) rawParameters["context_length"] = contextLength
-                        if (embeddingLength != null) rawParameters["embedding_length"] = embeddingLength
-                        if (attentionValueLength != null) rawParameters["attention_value_length"] = attentionValueLength
-                        if (blockCount != null) rawParameters["block_count"] = blockCount
-                        if (feedForwardLength != null) rawParameters["feed_forward_length"] = feedForwardLength
-                        if (fullAttentionInterval != null) rawParameters["full_attention_interval"] = fullAttentionInterval
-                        if (imageTokenId != null) rawParameters["image_token_id"] = imageTokenId
+                        // Add extracted wildcard values to parameters map (convert Int to Float)
+                        if (contextLength != null) rawParameters["context_length"] = contextLength.toFloat()
+                        if (embeddingLength != null) rawParameters["embedding_length"] = embeddingLength.toFloat()
+                        if (attentionValueLength != null) rawParameters["attention_value_length"] = attentionValueLength.toFloat()
+                        if (blockCount != null) rawParameters["block_count"] = blockCount.toFloat()
+                        if (feedForwardLength != null) rawParameters["feed_forward_length"] = feedForwardLength.toFloat()
+                        if (fullAttentionInterval != null) rawParameters["full_attention_interval"] = fullAttentionInterval.toFloat()
+                        if (imageTokenId != null) rawParameters["image_token_id"] = imageTokenId.toFloat()
                         
                         // 3. Also check for any other numeric fields in details that might have wildcard prefixes
                         val detailsObj = jsonObject["details"] as? kotlinx.serialization.json.JsonObject
@@ -1317,15 +1345,23 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                                 "parameter_size", "quantization_level"
                             )
                             if (key !in standardFields && value is JsonPrimitive) {
-                                val intValue = value.contentOrNull?.toIntOrNull()
-                                if (intValue != null) {
+                                val floatValue = value.contentOrNull?.toFloatOrNull()
+                                if (floatValue != null) {
                                     // Use the key as-is (might be qwen35.context_length etc.)
-                                    rawParameters[key] = intValue
+                                    rawParameters[key] = floatValue
                                 }
                             }
                         }
                         
                         Log.d("MainViewModel", "Extracted parameters: $rawParameters")
+                        
+                        // Debug: Check what's in rawParameters
+                        val archKeys = listOf("context_length", "embedding_length", "attention_value_length", 
+                                           "block_count", "feed_forward_length", "full_attention_interval", 
+                                           "image_token_id")
+                        val runtimeKeys = rawParameters.keys - archKeys
+                        Log.d("MainViewModel", "Architecture params: ${rawParameters.filterKeys { it in archKeys }}")
+                        Log.d("MainViewModel", "Runtime params: ${rawParameters.filterKeys { it !in archKeys }}")
                         
                         // Create ShowResponse with all extracted data
                         val showResponse = ShowResponse(
