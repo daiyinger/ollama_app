@@ -53,6 +53,7 @@ class SettingsManager(context: Context) {
         const val KEY_CONVERSATIONS = "conversations"
         const val KEY_ENABLE_SESSION_LOGGING = "enable_session_logging"
         const val KEY_EXPANDED_GROUPS = "expanded_groups"
+        const val KEY_EXPANDED_DAYS = "expanded_days"
         const val KEY_SYSTEM_PROMPTS = "system_prompts"
 
         val defaultProfile = OllamaProfile(
@@ -229,6 +230,14 @@ class SettingsManager(context: Context) {
     fun getExpandedGroups(): Set<String> {
         // Return a copy to ensure any modifications don't affect the original set stored in SharedPreferences
         return prefs.getStringSet(KEY_EXPANDED_GROUPS, null)?.toSet() ?: setOf("今天", "昨天")
+    }
+
+    fun saveExpandedDays(days: Set<String>) {
+        prefs.edit().putStringSet(KEY_EXPANDED_DAYS, HashSet(days)).apply()
+    }
+
+    fun getExpandedDays(): Set<String> {
+        return prefs.getStringSet(KEY_EXPANDED_DAYS, null)?.toSet() ?: setOf("今天", "昨天")
     }
 
     fun exportSettings(): String {

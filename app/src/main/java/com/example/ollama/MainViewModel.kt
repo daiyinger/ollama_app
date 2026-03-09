@@ -111,6 +111,9 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
     private val _expandedGroups = MutableStateFlow(setOf<String>())
     val expandedGroups: StateFlow<Set<String>> = _expandedGroups.asStateFlow()
 
+    private val _expandedDays = MutableStateFlow(setOf<String>())
+    val expandedDays: StateFlow<Set<String>> = _expandedDays.asStateFlow()
+
     private lateinit var ollamaApi: OllamaApiService
     private lateinit var ollamaApiPs: OllamaApiService
     private val pdfProcessingJobs = mutableMapOf<String, Job>()
@@ -125,6 +128,7 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
         requestLoggingInterceptor = RequestLoggingInterceptor(application)
         _enableSessionLogging.value = settingsManager.getEnableSessionLogging()
         _expandedGroups.value = settingsManager.getExpandedGroups()
+        _expandedDays.value = settingsManager.getExpandedDays()
         viewModelScope.launch {
             settingsManager.getActiveProfileFlow().collect { createOllamaService() }
         }
@@ -250,6 +254,11 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
         settingsManager.saveExpandedGroups(groups)
     }
 
+    fun setExpandedDays(days: Set<String>) {
+        _expandedDays.value = days
+        settingsManager.saveExpandedDays(days)
+    }
+
     fun exportSettings(): String {
         return settingsManager.exportSettings()
     }
@@ -297,6 +306,27 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
         deleteCachedImagesForConversation(conversationId)
         _conversations.value = _conversations.value.filter { it.id != conversationId }
         saveConversations()
+    }
+
+    fun deleteConversations(conversationIds: List<String>) {
+        conversationIds.forEach { deleteCachedImagesForConversation(it) }
+        _conversations.value = _conversations.value.filter { it.id !in conversationIds }
+        saveConversations()
+    }
+
+    fun buildMarkdownContent(conversationId: String): String? {
+        val conversation = _conversations.value.find { it.id == conversationId } ?: return null
+        val sb = StringBuilder()
+        sb.append("# ${conversation.title}\n\n")
+        conversation.messages.forEach { message ->
+            sb.append("## ${message.sender}\n\n")
+            sb.append("${message.content}\n\n")
+            if (message.fileUri != null) {
+                val fileName = message.fileName ?: "Attached File"
+                sb.append("![${fileName}](${message.fileUri})\n\n")
+            }
+        }
+        return sb.toString()
     }
 
     fun deleteMessage(conversationId: String, message: ChatMessage) {
@@ -811,6 +841,7 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                             }
 
                             var firstChunk = true
+                            var streamStartTime = 0L
                             var rawBuffer = ""
                             responseStream.use {
                                 var line: String?
@@ -820,6 +851,7 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                                     if (!line.startsWith("data:")) continue
 
                                     if (firstChunk) {
+                                        streamStartTime = System.currentTimeMillis()
                                         updateConversationInferenceStatus(conversationId, "Receiving...")
                                         firstChunk = false
                                     }
@@ -872,7 +904,8 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                                         }
 
                                         if (openAIResponse.usage != null) {
-                                            ollamaMessage = ollamaMessage.copy(performance = formatOpenAIUsage(openAIResponse.usage))
+                                            val elapsedSeconds = if (streamStartTime > 0L) (System.currentTimeMillis() - streamStartTime) / 1000.0 else 0.0
+                                            ollamaMessage = ollamaMessage.copy(performance = formatOpenAIUsage(openAIResponse.usage, elapsedSeconds))
                                         }
 
                                         withContext(Dispatchers.Main) {
@@ -1260,8 +1293,12 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
         return if (speed != null) "$tokens ($speed)" else tokens
     }
 
-    private fun formatOpenAIUsage(usage: OpenAIUsage): String {
-        return "Prompt: ${usage.prompt_tokens ?: 0} tokens, Response: ${usage.completion_tokens ?: 0} tokens, Total: ${usage.total_tokens ?: 0} tokens"
+    private fun formatOpenAIUsage(usage: OpenAIUsage, elapsedSeconds: Double = 0.0): String {
+        val tokens = "Prompt: ${usage.prompt_tokens ?: 0} tokens, Response: ${usage.completion_tokens ?: 0} tokens"
+        val speed = if (elapsedSeconds > 0.0 && (usage.completion_tokens ?: 0) > 0) {
+            " (%.2f t/s)".format((usage.completion_tokens ?: 0) / elapsedSeconds)
+        } else ""
+        return "$tokens$speed"
     }
 
     /**
