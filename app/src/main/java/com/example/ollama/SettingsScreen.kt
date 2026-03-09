@@ -62,6 +62,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -71,6 +72,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.foundation.layout.FlowRow
 import com.example.ollama.ui.theme.OllamaTheme
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -733,6 +735,8 @@ fun SettingsScreen(
 @Composable
 fun ModelDetailsDialog(viewModel: MainViewModel) {
     val modelDetails by viewModel.selectedModelDetails.collectAsState()
+    
+    android.util.Log.d("ModelDetailsDialog", "modelDetails changed: $modelDetails")
 
     Dialog(
         onDismissRequest = { viewModel.dismissOllamaModelDetailsDialog() },
@@ -749,12 +753,76 @@ fun ModelDetailsDialog(viewModel: MainViewModel) {
                     .verticalScroll(rememberScrollState())
             ) {
                 modelDetails?.let {
+                    android.util.Log.d("ModelDetailsDialog", "Displaying parameters: ${it.parameters}")
                     Text(text = "Model Details", style = MaterialTheme.typography.titleLarge)
                     Spacer(modifier = Modifier.padding(8.dp))
-                    Text(text = "Family: ${it.details.family}")
-                    Text(text = "Families: ${it.details.families?.joinToString(", ")}")
-                    Text(text = "Parameter Size: ${it.details.parameterSize}")
-                    Text(text = "Quantization Level: ${it.details.quantizationLevel}")
+                    
+                    // Basic info
+                    Text(text = "Family: ${it.details.family}", style = MaterialTheme.typography.bodyLarge)
+                    Text(text = "Families: ${it.details.families?.joinToString(", ") ?: "N/A"}", style = MaterialTheme.typography.bodyMedium)
+                    Text(text = "Parameter Size: ${it.details.parameterSize}", style = MaterialTheme.typography.bodyMedium)
+                    Text(text = "Quantization Level: ${it.details.quantizationLevel ?: "N/A"}", style = MaterialTheme.typography.bodyMedium)
+                    
+                    // Capabilities
+                    it.capabilities?.let { caps ->
+                        if (caps.isNotEmpty()) {
+                            Spacer(modifier = Modifier.padding(8.dp))
+                            Text(text = "Capabilities", style = MaterialTheme.typography.titleMedium)
+                            Spacer(modifier = Modifier.padding(4.dp))
+                            caps.forEach { cap ->
+                                Surface(
+                                    color = MaterialTheme.colorScheme.primary,
+                                    shape = MaterialTheme.shapes.small,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = cap,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Model Architecture (from model_info)
+                    val architectureParams = it.parameters?.filterKeys { key ->
+                        key in listOf("context_length", "embedding_length", "attention_value_length", 
+                                      "block_count", "feed_forward_length", "full_attention_interval", 
+                                      "image_token_id")
+                    }
+                    
+                    if (!architectureParams.isNullOrEmpty()) {
+                        Spacer(modifier = Modifier.padding(8.dp))
+                        Text(text = "Model Architecture", style = MaterialTheme.typography.titleMedium)
+                        Spacer(modifier = Modifier.padding(4.dp))
+                        architectureParams.entries.sortedBy { (key, _) -> key }.forEach { (key, value) ->
+                            Text(text = "$key: $value", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                    
+                    // Runtime Parameters
+                    val runtimeParams = it.parameters?.filterKeys { key ->
+                        key !in listOf("context_length", "embedding_length", "attention_value_length", 
+                                       "block_count", "feed_forward_length", "full_attention_interval", 
+                                       "image_token_id")
+                    }
+                    
+                    // Parameters
+                    it.parameters?.let { params ->
+                        if (params.isNotEmpty()) {
+                            Spacer(modifier = Modifier.padding(8.dp))
+                            Text(text = "Parameters", style = MaterialTheme.typography.titleMedium)
+                            Spacer(modifier = Modifier.padding(4.dp))
+                            runtimeParams?.entries?.sortedBy { (key, _) -> key }?.forEach { (key, value) ->
+                                Text(text = "$key: $value", style = MaterialTheme.typography.bodyMedium)
+                            }
+                        }
+                    }
                 }
             }
         }

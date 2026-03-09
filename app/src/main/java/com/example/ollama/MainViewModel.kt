@@ -27,6 +27,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -1167,15 +1171,257 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             try {
                 val profile = activeProfile.value ?: return@launch
-                val url = profile.apiHost.removeSuffix("/") + "/api/show"
-                val response = ollamaApi.show(url, ShowRequest(name = modelName))
-                _selectedModelDetails.value = response
-                _showModelDetailsDialog.value = true
+                val baseUrl = profile.apiHost.removeSuffix("/")
+                val url = "$baseUrl/api/show"
+                
+                // Make raw HTTP request to get the JSON response
+                val client = OkHttpClient.Builder()
+                    .connectTimeout(20, TimeUnit.SECONDS)
+                    .readTimeout(20, TimeUnit.SECONDS)
+                    .build()
+                
+                val jsonBody = json.encodeToString(ShowRequest(name = modelName))
+                val requestBody = okhttp3.RequestBody.create(
+                    "application/json; charset=utf-8".toMediaType(),
+                    jsonBody
+                )
+                
+                val request = okhttp3.Request.Builder()
+                    .url(url)
+                    .post(requestBody)
+                    .build()
+                
+                // Execute on IO dispatcher
+                val response = withContext(Dispatchers.IO) {
+                    client.newCall(request).execute()
+                }
+                
+                val responseBody = withContext(Dispatchers.IO) {
+                    response.body?.string()
+                }
+                
+                Log.d("MainViewModel", "Show model response: $responseBody")
+                
+                if (responseBody != null) {
+                    // Parse JSON manually to handle wildcard-prefixed fields
+                    val jsonElement = kotlinx.serialization.json.Json.parseToJsonElement(responseBody)
+                    val jsonObject = jsonElement as? kotlinx.serialization.json.JsonObject
+                    
+                    if (jsonObject != null) {
+                        Log.d("MainViewModel", "Full JSON structure keys: ${jsonObject.keys}")
+                        
+                        // 打印所有键值对以便调试
+                        jsonObject.forEach { (key, value) ->
+                            Log.d("MainViewModel", "Key: $key = $value (type: ${value::class.simpleName})")
+                        }
+                        
+                        // Extract standard fields using regular deserialization
+                        val detailsJson = jsonObject["details"]?.toString() ?: "{}"
+                        Log.d("MainViewModel", "Details JSON: $detailsJson")
+                        
+                        val details = try {
+                            json.decodeFromString<OllamaPsModelDetails>(detailsJson)
+                        } catch (e: Exception) {
+                            Log.e("MainViewModel", "Error parsing details", e)
+                            OllamaPsModelDetails("", "", "", null, "", null)
+                        }
+                        
+                        // Extract capabilities
+                        val capabilities = (jsonObject["capabilities"] as? JsonArray)
+                            ?.mapNotNull { it: kotlinx.serialization.json.JsonElement -> (it as? JsonPrimitive)?.contentOrNull }
+                        
+                        // Extract parameters from both root level and details with wildcard matching
+                        val rawParameters = mutableMapOf<String, Int>()
+                        
+                        // 1. Try to extract from root-level parameters object
+                        val parametersObj = jsonObject["parameters"] as? kotlinx.serialization.json.JsonObject
+                        if (parametersObj != null) {
+                            Log.d("MainViewModel", "Found parameters object: ${parametersObj.keys}")
+                            parametersObj.forEach { (key, value) ->
+                                Log.d("MainViewModel", "  Parameter $key = $value")
+                                val intValue = when (value) {
+                                    is JsonPrimitive -> value.contentOrNull?.toIntOrNull()
+                                    else -> null
+                                }
+                                if (intValue != null) {
+                                    rawParameters[key] = intValue
+                                }
+                            }
+                        } else {
+                            Log.d("MainViewModel", "No parameters object found at root level")
+                        }
+                        
+                        // 2. Search for context_length and other numeric fields in model_info object
+                        Log.d("MainViewModel", "Searching for context_length in model_info...")
+                        val modelInfoObj = jsonObject["model_info"] as? kotlinx.serialization.json.JsonObject
+                        
+                        val contextLength: Int? = if (modelInfoObj != null) {
+                            extractWildcardValueFromRoot(modelInfoObj, "context_length")
+                        } else {
+                            Log.d("MainViewModel", "No model_info object found")
+                            extractWildcardValueFromRoot(jsonObject, "context_length")
+                        }
+                        Log.d("MainViewModel", "context_length result: $contextLength")
+                        
+                        val embeddingLength: Int? = if (modelInfoObj != null) {
+                            extractWildcardValueFromRoot(modelInfoObj, "embedding_length")
+                        } else {
+                            extractWildcardValueFromRoot(jsonObject, "embedding_length")
+                        }
+                        
+                        val attentionValueLength: Int? = if (modelInfoObj != null) {
+                            extractWildcardValueFromRoot(modelInfoObj, "attention.value_length", "attention_value_length")
+                        } else {
+                            extractWildcardValueFromRoot(jsonObject, "attention.value_length", "attention_value_length")
+                        }
+                        
+                        val blockCount: Int? = if (modelInfoObj != null) {
+                            extractWildcardValueFromRoot(modelInfoObj, "block_count")
+                        } else {
+                            extractWildcardValueFromRoot(jsonObject, "block_count")
+                        }
+                        
+                        val feedForwardLength: Int? = if (modelInfoObj != null) {
+                            extractWildcardValueFromRoot(modelInfoObj, "feed_forward_length")
+                        } else {
+                            extractWildcardValueFromRoot(jsonObject, "feed_forward_length")
+                        }
+                        
+                        val fullAttentionInterval: Int? = if (modelInfoObj != null) {
+                            extractWildcardValueFromRoot(modelInfoObj, "full_attention_interval")
+                        } else {
+                            extractWildcardValueFromRoot(jsonObject, "full_attention_interval")
+                        }
+                        
+                        val imageTokenId: Int? = if (modelInfoObj != null) {
+                            extractWildcardValueFromRoot(modelInfoObj, "image_token_id")
+                        } else {
+                            extractWildcardValueFromRoot(jsonObject, "image_token_id")
+                        }
+                        
+                        // Add extracted wildcard values to parameters map
+                        if (contextLength != null) rawParameters["context_length"] = contextLength
+                        if (embeddingLength != null) rawParameters["embedding_length"] = embeddingLength
+                        if (attentionValueLength != null) rawParameters["attention_value_length"] = attentionValueLength
+                        if (blockCount != null) rawParameters["block_count"] = blockCount
+                        if (feedForwardLength != null) rawParameters["feed_forward_length"] = feedForwardLength
+                        if (fullAttentionInterval != null) rawParameters["full_attention_interval"] = fullAttentionInterval
+                        if (imageTokenId != null) rawParameters["image_token_id"] = imageTokenId
+                        
+                        // 3. Also check for any other numeric fields in details that might have wildcard prefixes
+                        val detailsObj = jsonObject["details"] as? kotlinx.serialization.json.JsonObject
+                        detailsObj?.forEach { (key, value) ->
+                            // Skip standard fields we already handled
+                            val standardFields = setOf(
+                                "parent_model", "format", "family", "families", 
+                                "parameter_size", "quantization_level"
+                            )
+                            if (key !in standardFields && value is JsonPrimitive) {
+                                val intValue = value.contentOrNull?.toIntOrNull()
+                                if (intValue != null) {
+                                    // Use the key as-is (might be qwen35.context_length etc.)
+                                    rawParameters[key] = intValue
+                                }
+                            }
+                        }
+                        
+                        Log.d("MainViewModel", "Extracted parameters: $rawParameters")
+                        
+                        // Create ShowResponse with all extracted data
+                        val showResponse = ShowResponse(
+                            details = details,
+                            parameters = rawParameters.ifEmpty { null },
+                            capabilities = if (capabilities.isNullOrEmpty()) null else capabilities.toList()
+                        )
+                        
+                        Log.d("MainViewModel", "Successfully created ShowResponse: $showResponse")
+                        
+                        // Store additional wildcard-extracted values in a wrapper or directly update UI
+                        Log.d("MainViewModel", "Before updating state: ${_selectedModelDetails.value}")
+                        _selectedModelDetails.value = showResponse
+                        Log.d("MainViewModel", "After updating state: ${_selectedModelDetails.value}")
+                        
+                        // Make sure dialog is shown
+                        _showModelDetailsDialog.value = true
+                        Log.d("MainViewModel", "Dialog should be shown now")
+                    } else {
+                        Log.e("MainViewModel", "Failed to parse JSON response")
+                    }
+                } else {
+                    Log.e("MainViewModel", "Empty response body from server")
+                }
             } catch (e: Exception) {
                 Log.e("MainViewModel", "Error showing ollama model", e)
                 // Handle error, maybe show a toast
             }
         }
+    }
+    
+    /**
+     * Extract a value from JSON using wildcard matching.
+     * Supports both exact match and wildcard prefix match (e.g., "qwen35.context_length").
+     * This version searches at the ROOT level of the JSON response.
+     */
+    private fun extractWildcardValueFromRoot(
+        root: kotlinx.serialization.json.JsonObject,
+        vararg possibleKeys: String
+    ): Int? {
+        for (key in possibleKeys) {
+            Log.d("MainViewModel", "  Trying to extract: $key")
+            
+            // Try exact match first
+            val exactMatch = root[key]
+            if (exactMatch != null) {
+                Log.d("MainViewModel", "    Found exact match '$key' = $exactMatch")
+                if (exactMatch is JsonPrimitive) {
+                    return exactMatch.contentOrNull?.toIntOrNull()
+                }
+            }
+            
+            // Try wildcard prefix match (e.g., "*.context_length" matches "qwen35.context_length")
+            val wildcardMatches = root.filterKeys { it.endsWith(".$key") }
+            if (wildcardMatches.isNotEmpty()) {
+                Log.d("MainViewModel", "    Found wildcard match for '$key': ${wildcardMatches.keys}")
+                val firstValue = wildcardMatches.values.first()
+                if (firstValue is JsonPrimitive) {
+                    return firstValue.contentOrNull?.toIntOrNull()
+                }
+            } else {
+                Log.d("MainViewModel", "    No wildcard match for '$key'")
+            }
+        }
+        return null
+    }
+    
+    /**
+     * Extract a value from a nested container using wildcard matching.
+     * Supports both exact match and wildcard prefix match (e.g., "qwen35.context_length").
+     * This version searches inside a specific container (e.g., "details" object).
+     */
+    private fun extractWildcardValue(
+        root: kotlinx.serialization.json.JsonObject,
+        containerKey: String,
+        vararg possibleKeys: String
+    ): Int? {
+        val container = root[containerKey] as? kotlinx.serialization.json.JsonObject ?: return null
+        
+        for (key in possibleKeys) {
+            // Try exact match first
+            val exactMatch = container[key]
+            if (exactMatch is JsonPrimitive) {
+                return exactMatch.contentOrNull?.toIntOrNull()
+            }
+            
+            // Try wildcard prefix match (e.g., "*.context_length")
+            val wildcardMatches = container.filterKeys { it.endsWith(".$key") }
+            if (wildcardMatches.isNotEmpty()) {
+                val firstValue = wildcardMatches.values.first()
+                if (firstValue is JsonPrimitive) {
+                    return firstValue.contentOrNull?.toIntOrNull()
+                }
+            }
+        }
+        return null
     }
 
     fun dismissOllamaModelDetailsDialog() {

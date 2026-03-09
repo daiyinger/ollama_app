@@ -68,6 +68,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material3.Surface
 import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
@@ -725,11 +727,81 @@ fun ModelDetailsDialog(
         title = { Text(modelDetails.details.family) },
         text = {
             LazyColumn {
-                item { Text("Format: ${modelDetails.details.format}") }
-                item { Text("Parameter Size: ${modelDetails.details.parameterSize}") }
-                item { Text("Quantization Level: ${modelDetails.details.quantizationLevel}") }
-                modelDetails.details.families?.let {
-                    item { Text("Families: ${it.joinToString()}") }
+                // Basic info
+                item { Text("Format: ${modelDetails.details.format}", style = MaterialTheme.typography.bodyLarge) }
+                item { Text("Families: ${modelDetails.details.families?.joinToString(", ") ?: "N/A"}", style = MaterialTheme.typography.bodyMedium) }
+                item { Text("Parameter Size: ${modelDetails.details.parameterSize}", style = MaterialTheme.typography.bodyMedium) }
+                item { Text("Quantization Level: ${modelDetails.details.quantizationLevel ?: "N/A"}", style = MaterialTheme.typography.bodyMedium) }
+                
+                // Capabilities
+                modelDetails.capabilities?.let { caps ->
+                    if (caps.isNotEmpty()) {
+                        item { 
+                            Spacer(modifier = Modifier.padding(8.dp))
+                            Text("Capabilities", style = MaterialTheme.typography.titleMedium)
+                            Spacer(modifier = Modifier.padding(4.dp))
+                        }
+                        caps.forEach { cap ->
+                            item {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.primary,
+                                    shape = MaterialTheme.shapes.small,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = cap,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onPrimary,
+                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Model Architecture (from model_info)
+                val architectureParams = modelDetails.parameters?.filterKeys { key ->
+                    key in listOf("context_length", "embedding_length", "attention_value_length", 
+                                  "block_count", "feed_forward_length", "full_attention_interval", 
+                                  "image_token_id")
+                }
+                
+                if (!architectureParams.isNullOrEmpty()) {
+                    item {
+                        Spacer(modifier = Modifier.padding(8.dp))
+                        Text("Model Architecture", style = MaterialTheme.typography.titleMedium)
+                        Spacer(modifier = Modifier.padding(4.dp))
+                    }
+                    architectureParams.entries.sortedBy { (key, _) -> key }.forEach { (key, value) ->
+                        item { 
+                            Text("$key: $value", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+                
+                // Runtime Parameters
+                val runtimeParams = modelDetails.parameters?.filterKeys { key ->
+                    key !in listOf("context_length", "embedding_length", "attention_value_length", 
+                                   "block_count", "feed_forward_length", "full_attention_interval", 
+                                   "image_token_id")
+                }
+                
+                // Parameters
+                modelDetails.parameters?.let { params ->
+                    if (params.isNotEmpty()) {
+                        item {
+                            Spacer(modifier = Modifier.padding(8.dp))
+                            Text("Parameters", style = MaterialTheme.typography.titleMedium)
+                            Spacer(modifier = Modifier.padding(4.dp))
+                        }
+                        runtimeParams?.entries?.sortedBy { (key, _) -> key }?.forEach { (key, value) ->
+                            item { Text("$key: $value", style = MaterialTheme.typography.bodyMedium) }
+                        }
+                    }
                 }
             }
         },

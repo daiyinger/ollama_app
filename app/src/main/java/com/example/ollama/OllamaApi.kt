@@ -3,6 +3,17 @@ package com.example.ollama
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonClassDiscriminator
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.builtins.nullable
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.descriptors.buildClassSerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.GET
@@ -134,7 +145,9 @@ data class ShowRequest(
 
 @Serializable
 data class ShowResponse(
-    val details: OllamaPsModelDetails
+    val details: OllamaPsModelDetails,
+    val parameters: Map<String, Int>? = null,
+    val capabilities: List<String>? = null
 )
 
 
@@ -166,7 +179,7 @@ data class OllamaPsModelDetails(
     @SerialName("parameter_size")
     val parameterSize: String,
     @SerialName("quantization_level")
-    val quantizationLevel: String? = null,
+    val quantizationLevel: String? = null
 )
 
 
