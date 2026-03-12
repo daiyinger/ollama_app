@@ -244,16 +244,20 @@ class SettingsManager(context: Context) {
         return prefs.getStringSet(KEY_EXPANDED_DAYS, null)?.toSet() ?: setOf("今天", "昨天")
     }
 
-    fun exportSettings(): String {
+    fun exportSettings(includeConversations: Boolean = true): String {
         val profiles = getProfiles()
         val activeProfileName = prefs.getString(KEY_ACTIVE_PROFILE_NAME, null)
         val enableSessionLogging = getEnableSessionLogging()
 
-        val conversationsJson = getConversations()
-        val conversations = if (conversationsJson.isNotEmpty()) {
-            try {
-                json.decodeFromString<List<Conversation>>(conversationsJson)
-            } catch (e: Exception) {
+        val conversations = if (includeConversations) {
+            val conversationsJson = getConversations()
+            if (conversationsJson.isNotEmpty()) {
+                try {
+                    json.decodeFromString<List<Conversation>>(conversationsJson)
+                } catch (e: Exception) {
+                    emptyList()
+                }
+            } else {
                 emptyList()
             }
         } else {
@@ -278,8 +282,11 @@ class SettingsManager(context: Context) {
             setEnableSessionLogging(appSettings.enableSessionLogging)
             saveSystemPrompts(appSettings.systemPrompts)
 
-            val conversationsJson = json.encodeToString(appSettings.conversations)
-            saveConversations(conversationsJson)
+            // Only update conversations if they are present in the import data
+            if (appSettings.conversations.isNotEmpty()) {
+                val conversationsJson = json.encodeToString(appSettings.conversations)
+                saveConversations(conversationsJson)
+            }
 
             // After import, we need to reload the profiles and active profile.
             val profiles = getProfiles()

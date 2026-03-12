@@ -75,6 +75,9 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.ollama.ui.theme.OllamaTheme
 import kotlinx.coroutines.launch
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.io.OutputStreamWriter
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -115,10 +118,12 @@ fun SettingsScreen(
     var isProfileSelectorExpended by remember { mutableStateOf(false) }
     var showConfirmDialog by remember { mutableStateOf(false) }
     var showImportConfirmDialog by remember { mutableStateOf<Uri?>(null) }
+    var showJsonImportConfirmDialog by remember { mutableStateOf<String?>(null) }
 
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
+    // --- ZIP 备份 (含图片) ---
     val createZipLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/zip"),
         onResult = { uri: Uri? ->
@@ -126,9 +131,9 @@ fun SettingsScreen(
                 coroutineScope.launch {
                     try {
                         viewModel.exportDataToZip(it)
-                        Toast.makeText(context, "所有数据（含图片）导出成功", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "完整备份导出成功", Toast.LENGTH_SHORT).show()
                     } catch (e: Exception) {
-                        Toast.makeText(context, "数据导出失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "备份失败: ${e.message}", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -138,17 +143,53 @@ fun SettingsScreen(
     val openZipLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
         onResult = { uri: Uri? ->
+            uri?.let { showImportConfirmDialog = it }
+        }
+    )
+
+    // --- JSON 备份 (仅设置与文字) ---
+    val createJsonLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json"),
+        onResult = { uri: Uri? ->
             uri?.let {
-                showImportConfirmDialog = it
+                try {
+                    val settingsJson = viewModel.exportSettings()
+                    context.contentResolver.openOutputStream(it)?.use { outputStream ->
+                        OutputStreamWriter(outputStream).use { writer ->
+                            writer.write(settingsJson)
+                        }
+                    }
+                    Toast.makeText(context, "设置导出成功", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    Toast.makeText(context, "设置导出失败", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     )
 
+    val openJsonLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+        onResult = { uri: Uri? ->
+            uri?.let {
+                try {
+                    context.contentResolver.openInputStream(it)?.use { inputStream ->
+                        BufferedReader(InputStreamReader(inputStream)).use { reader ->
+                            showJsonImportConfirmDialog = reader.readText()
+                        }
+                    }
+                } catch (e: Exception) {
+                    Toast.makeText(context, "无法读取文件", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    )
+
+    // --- 恢复确认对话框 ---
     if (showImportConfirmDialog != null) {
         AlertDialog(
             onDismissRequest = { showImportConfirmDialog = null },
-            title = { Text("确认恢复数据") },
-            text = { Text("这将覆盖您当前的所有设置、对话历史记录以及相关的图片附件。确定要继续吗？") },
+            title = { Text("确认恢复完整备份") },
+            text = { Text("这将覆盖所有设置、会话记录及图片。确定继续吗？") },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -156,9 +197,9 @@ fun SettingsScreen(
                             coroutineScope.launch {
                                 try {
                                     viewModel.importDataFromZip(uri)
-                                    Toast.makeText(context, "数据恢复成功", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "恢复成功", Toast.LENGTH_SHORT).show()
                                 } catch (e: Exception) {
-                                    Toast.makeText(context, "数据恢复失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "恢复失败: ${e.message}", Toast.LENGTH_SHORT).show()
                                 }
                             }
                         }
@@ -167,9 +208,29 @@ fun SettingsScreen(
                 ) { Text("恢复") }
             },
             dismissButton = {
+                TextButton(onClick = { showImportConfirmDialog = null }) { Text("取消") }
+            }
+        )
+    }
+
+    if (showJsonImportConfirmDialog != null) {
+        AlertDialog(
+            onDismissRequest = { showJsonImportConfirmDialog = null },
+            title = { Text("确认恢复设置") },
+            text = { Text("这将覆盖所有设置和会话文字（不含图片）。确定继续吗？") },
+            confirmButton = {
                 TextButton(
-                    onClick = { showImportConfirmDialog = null }
-                ) { Text("取消") }
+                    onClick = {
+                        showJsonImportConfirmDialog?.let { json ->
+                            viewModel.importSettings(json)
+                            Toast.makeText(context, "设置恢复成功", Toast.LENGTH_SHORT).show()
+                        }
+                        showJsonImportConfirmDialog = null
+                    }
+                ) { Text("恢复") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showJsonImportConfirmDialog = null }) { Text("取消") }
             }
         )
     }
@@ -678,22 +739,38 @@ fun SettingsScreen(
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text(text = "数据管理", style = MaterialTheme.typography.titleMedium)
-                        Text(text = "导出或恢复应用设置和对话历史记录（含图片）", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Button(
-                                onClick = { openZipLauncher.launch(arrayOf("application/zip")) },
-                                modifier = Modifier.weight(1f)
+                        
+                        // 完整备份 (ZIP)
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(text = "完整备份 (含设置、历史、图片)", style = MaterialTheme.typography.labelMedium)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Text(text="恢复数据", maxLines = 1)
+                                Button(onClick = { openZipLauncher.launch(arrayOf("application/zip")) }, modifier = Modifier.weight(1f)) {
+                                    Text("恢复 ZIP", fontSize = 12.sp)
+                                }
+                                Button(onClick = { createZipLauncher.launch("ollama_full_backup.zip") }, modifier = Modifier.weight(1f)) {
+                                    Text("导出 ZIP", fontSize = 12.sp)
+                                }
                             }
-                            Button(
-                                onClick = { createZipLauncher.launch("ollama_backup.zip") },
-                                modifier = Modifier.weight(1f)
+                        }
+
+                        Spacer(modifier = Modifier.padding(4.dp))
+
+                        // 仅文字备份 (JSON)
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(text = "轻量备份 (仅设置)", style = MaterialTheme.typography.labelMedium)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Text(text="导出数据", maxLines = 1)
+                                Button(onClick = { openJsonLauncher.launch(arrayOf("application/json")) }, modifier = Modifier.weight(1f)) {
+                                    Text("恢复 JSON", fontSize = 12.sp)
+                                }
+                                Button(onClick = { createJsonLauncher.launch("ollama_settings.json") }, modifier = Modifier.weight(1f)) {
+                                    Text("导出 JSON", fontSize = 12.sp)
+                                }
                             }
                         }
                     }

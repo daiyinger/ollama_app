@@ -291,8 +291,8 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
         settingsManager.saveExpandedDays(days)
     }
 
-    fun exportSettings(): String {
-        return settingsManager.exportSettings()
+    fun exportSettings(includeConversations: Boolean = false): String {
+        return settingsManager.exportSettings(includeConversations)
     }
 
     fun importSettings(settingsJson: String) {
@@ -305,7 +305,8 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
         withContext(Dispatchers.IO) {
             try {
                 val application = getApplication<Application>()
-                val settingsJson = settingsManager.exportSettings()
+                // ZIP backup should include conversations
+                val settingsJson = settingsManager.exportSettings(includeConversations = true)
                 val attachmentsDir = File(application.filesDir, "attachments")
 
                 application.contentResolver.openOutputStream(uri)?.use { outputStream ->
