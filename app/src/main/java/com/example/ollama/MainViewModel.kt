@@ -35,8 +35,11 @@ import okhttp3.Interceptor
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
+import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.OutputStreamWriter
@@ -45,6 +48,9 @@ import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
 import java.util.*
 import java.util.concurrent.TimeUnit
+import java.util.zip.ZipEntry
+import java.util.zip.ZipInputStream
+import java.util.zip.ZipOutputStream
 
 data class RunningModelDisplayInfo(val name: String, val expirationTime: String)
 data class LogFileInfo(val file: File, val size: Long)
@@ -293,6 +299,81 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
         settingsManager.importSettings(settingsJson)
         _enableSessionLogging.value = settingsManager.getEnableSessionLogging()
         loadConversations() // Reload conversations after import
+    }
+
+    suspend fun exportDataToZip(uri: Uri) {
+        withContext(Dispatchers.IO) {
+            try {
+                val application = getApplication<Application>()
+                val settingsJson = settingsManager.exportSettings()
+                val attachmentsDir = File(application.filesDir, "attachments")
+
+                application.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                    ZipOutputStream(BufferedOutputStream(outputStream)).use { zipOut ->
+                        // 1. Write settings.json
+                        val jsonEntry = ZipEntry("settings.json")
+                        zipOut.putNextEntry(jsonEntry)
+                        zipOut.write(settingsJson.toByteArray())
+                        zipOut.closeEntry()
+
+                        // 2. Write attachments directory
+                        if (attachmentsDir.exists()) {
+                            attachmentsDir.walkTopDown().forEach { file ->
+                                if (file.isFile) {
+                                    val relativePath = file.relativeTo(application.filesDir).path
+                                    val zipEntry = ZipEntry(relativePath)
+                                    zipOut.putNextEntry(zipEntry)
+                                    FileInputStream(file).use { input ->
+                                        input.copyTo(zipOut)
+                                    }
+                                    zipOut.closeEntry()
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error exporting data to ZIP", e)
+                throw e
+            }
+        }
+    }
+
+    suspend fun importDataFromZip(uri: Uri) {
+        withContext(Dispatchers.IO) {
+            try {
+                val application = getApplication<Application>()
+                var settingsJson: String? = null
+
+                application.contentResolver.openInputStream(uri)?.use { inputStream ->
+                    ZipInputStream(BufferedInputStream(inputStream)).use { zipIn ->
+                        var entry = zipIn.getNextEntry()
+                        while (entry != null) {
+                            if (entry.name == "settings.json") {
+                                settingsJson = zipIn.bufferedReader().readText()
+                            } else if (entry.name.startsWith("attachments/")) {
+                                val outFile = File(application.filesDir, entry.name)
+                                outFile.parentFile?.mkdirs()
+                                FileOutputStream(outFile).use { output ->
+                                    zipIn.copyTo(output)
+                                }
+                            }
+                            zipIn.closeEntry()
+                            entry = zipIn.getNextEntry()
+                        }
+                    }
+                }
+
+                settingsJson?.let {
+                    withContext(Dispatchers.Main) {
+                        importSettings(it)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("MainViewModel", "Error importing data from ZIP", e)
+                throw e
+            }
+        }
     }
 
     private fun loadConversations() {
@@ -999,7 +1080,6 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private fun addMessageToConversation(conversationId: String, message: ChatMessage) {
-        val conversationId = conversationId
         val conversationIndex = _conversations.value.indexOfFirst { it.id == conversationId }
         if (conversationIndex != -1) {
             val updatedConversations = _conversations.value.toMutableList()

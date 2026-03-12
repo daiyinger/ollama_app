@@ -56,6 +56,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -72,11 +73,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.compose.foundation.layout.FlowRow
 import com.example.ollama.ui.theme.OllamaTheme
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.io.OutputStreamWriter
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -116,43 +114,32 @@ fun SettingsScreen(
     var isApiModeExpanded by remember { mutableStateOf(false) }
     var isProfileSelectorExpended by remember { mutableStateOf(false) }
     var showConfirmDialog by remember { mutableStateOf(false) }
-    var showImportConfirmDialog by remember { mutableStateOf<String?>(null) }
+    var showImportConfirmDialog by remember { mutableStateOf<Uri?>(null) }
 
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
-    val createDocumentLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/json"),
+    val createZipLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/zip"),
         onResult = { uri: Uri? ->
             uri?.let {
-                try {
-                    val settingsJson = viewModel.exportSettings()
-                    context.contentResolver.openOutputStream(it)?.use { outputStream ->
-                        OutputStreamWriter(outputStream).use { writer ->
-                            writer.write(settingsJson)
-                        }
+                coroutineScope.launch {
+                    try {
+                        viewModel.exportDataToZip(it)
+                        Toast.makeText(context, "所有数据（含图片）导出成功", Toast.LENGTH_SHORT).show()
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "数据导出失败: ${e.message}", Toast.LENGTH_SHORT).show()
                     }
-                    Toast.makeText(context, "数据导出成功", Toast.LENGTH_SHORT).show()
-                } catch (e: Exception) {
-                    Toast.makeText(context, "数据导出失败", Toast.LENGTH_SHORT).show()
                 }
             }
         }
     )
 
-    val openDocumentLauncher = rememberLauncherForActivityResult(
+    val openZipLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
         onResult = { uri: Uri? ->
             uri?.let {
-                try {
-                    context.contentResolver.openInputStream(it)?.use { inputStream ->
-                        BufferedReader(InputStreamReader(inputStream)).use { reader ->
-                            val settingsJson = reader.readText()
-                            showImportConfirmDialog = settingsJson
-                        }
-                    }
-                } catch (e: Exception) {
-                    Toast.makeText(context, "无法读取备份文件", Toast.LENGTH_SHORT).show()
-                }
+                showImportConfirmDialog = it
             }
         }
     )
@@ -161,13 +148,19 @@ fun SettingsScreen(
         AlertDialog(
             onDismissRequest = { showImportConfirmDialog = null },
             title = { Text("确认恢复数据") },
-            text = { Text("这将覆盖您当前的所有设置和对话历史记录。确定要继续吗？") },
+            text = { Text("这将覆盖您当前的所有设置、对话历史记录以及相关的图片附件。确定要继续吗？") },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        showImportConfirmDialog?.let { settingsJson ->
-                            viewModel.importSettings(settingsJson)
-                            Toast.makeText(context, "数据恢复成功", Toast.LENGTH_SHORT).show()
+                        showImportConfirmDialog?.let { uri ->
+                            coroutineScope.launch {
+                                try {
+                                    viewModel.importDataFromZip(uri)
+                                    Toast.makeText(context, "数据恢复成功", Toast.LENGTH_SHORT).show()
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "数据恢复失败: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
+                            }
                         }
                         showImportConfirmDialog = null
                     }
@@ -685,19 +678,19 @@ fun SettingsScreen(
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text(text = "数据管理", style = MaterialTheme.typography.titleMedium)
-                        Text(text = "导出或恢复应用设置和对话历史记录", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(text = "导出或恢复应用设置和对话历史记录（含图片）", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Button(
-                                onClick = { openDocumentLauncher.launch(arrayOf("application/json")) },
+                                onClick = { openZipLauncher.launch(arrayOf("application/zip")) },
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Text(text="恢复数据", maxLines = 1)
                             }
                             Button(
-                                onClick = { createDocumentLauncher.launch("ollama_backup.json") },
+                                onClick = { createZipLauncher.launch("ollama_backup.zip") },
                                 modifier = Modifier.weight(1f)
                             ) {
                                 Text(text="导出数据", maxLines = 1)
