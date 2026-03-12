@@ -43,7 +43,8 @@ data class AppSettings(
     val profiles: List<OllamaProfile>,
     val activeProfileName: String?,
     val enableSessionLogging: Boolean,
-    val systemPrompts: List<SystemPrompt> = emptyList()
+    val systemPrompts: List<SystemPrompt> = emptyList(),
+    val conversations: List<Conversation> = emptyList()
 )
 
 class SettingsManager(context: Context) {
@@ -248,11 +249,23 @@ class SettingsManager(context: Context) {
         val activeProfileName = prefs.getString(KEY_ACTIVE_PROFILE_NAME, null)
         val enableSessionLogging = getEnableSessionLogging()
 
+        val conversationsJson = getConversations()
+        val conversations = if (conversationsJson.isNotEmpty()) {
+            try {
+                json.decodeFromString<List<Conversation>>(conversationsJson)
+            } catch (e: Exception) {
+                emptyList()
+            }
+        } else {
+            emptyList()
+        }
+
         val appSettings = AppSettings(
             profiles = profiles,
             activeProfileName = activeProfileName,
             enableSessionLogging = enableSessionLogging,
-            systemPrompts = getSystemPrompts()
+            systemPrompts = getSystemPrompts(),
+            conversations = conversations
         )
         return json.encodeToString(appSettings)
     }
@@ -264,6 +277,9 @@ class SettingsManager(context: Context) {
             setActiveProfile(appSettings.activeProfileName)
             setEnableSessionLogging(appSettings.enableSessionLogging)
             saveSystemPrompts(appSettings.systemPrompts)
+
+            val conversationsJson = json.encodeToString(appSettings.conversations)
+            saveConversations(conversationsJson)
 
             // After import, we need to reload the profiles and active profile.
             val profiles = getProfiles()

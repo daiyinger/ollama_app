@@ -292,6 +292,7 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
     fun importSettings(settingsJson: String) {
         settingsManager.importSettings(settingsJson)
         _enableSessionLogging.value = settingsManager.getEnableSessionLogging()
+        loadConversations() // Reload conversations after import
     }
 
     private fun loadConversations() {
@@ -998,6 +999,7 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private fun addMessageToConversation(conversationId: String, message: ChatMessage) {
+        val conversationId = conversationId
         val conversationIndex = _conversations.value.indexOfFirst { it.id == conversationId }
         if (conversationIndex != -1) {
             val updatedConversations = _conversations.value.toMutableList()

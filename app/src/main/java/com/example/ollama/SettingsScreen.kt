@@ -131,9 +131,9 @@ fun SettingsScreen(
                             writer.write(settingsJson)
                         }
                     }
-                    Toast.makeText(context, "Settings exported successfully", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "数据导出成功", Toast.LENGTH_SHORT).show()
                 } catch (e: Exception) {
-                    Toast.makeText(context, "Failed to export settings", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "数据导出失败", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -151,7 +151,7 @@ fun SettingsScreen(
                         }
                     }
                 } catch (e: Exception) {
-                    Toast.makeText(context, "Failed to read settings file", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "无法读取备份文件", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -160,23 +160,23 @@ fun SettingsScreen(
     if (showImportConfirmDialog != null) {
         AlertDialog(
             onDismissRequest = { showImportConfirmDialog = null },
-            title = { Text("Confirm Import") },
-            text = { Text("This will overwrite your current settings. Are you sure you want to continue?") },
+            title = { Text("确认恢复数据") },
+            text = { Text("这将覆盖您当前的所有设置和对话历史记录。确定要继续吗？") },
             confirmButton = {
                 TextButton(
                     onClick = {
                         showImportConfirmDialog?.let { settingsJson ->
                             viewModel.importSettings(settingsJson)
-                            Toast.makeText(context, "Settings imported successfully", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "数据恢复成功", Toast.LENGTH_SHORT).show()
                         }
                         showImportConfirmDialog = null
                     }
-                ) { Text("Import") }
+                ) { Text("恢复") }
             },
             dismissButton = {
                 TextButton(
                     onClick = { showImportConfirmDialog = null }
-                ) { Text("Cancel") }
+                ) { Text("取消") }
             }
         )
     }
@@ -680,33 +680,33 @@ fun SettingsScreen(
                         onCheckedChange = { viewModel.setEnableSessionLogging(it) }
                     )
                 }
+                
+                // 数据管理部分
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(text = "数据管理", style = MaterialTheme.typography.titleMedium)
+                        Text(text = "导出或恢复应用设置和对话历史记录", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = { openDocumentLauncher.launch(arrayOf("application/json")) },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(text="恢复数据", maxLines = 1)
+                            }
+                            Button(
+                                onClick = { createDocumentLauncher.launch("ollama_backup.json") },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(text="导出数据", maxLines = 1)
+                            }
+                        }
+                    }
+                }
             }
 
-            Spacer(modifier = Modifier.padding(8.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Button(
-                    onClick = { openDocumentLauncher.launch(arrayOf("application/json")) },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(text="Import Settings",
-                        style = MaterialTheme.typography.labelLarge.copy(
-                        fontSize = 12.sp),
-                        maxLines = 1)
-                }
-                Button(
-                    onClick = { createDocumentLauncher.launch("ollama_settings.json") },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(text="Export Settings",
-                        style = MaterialTheme.typography.labelLarge.copy(
-                            fontSize = 12.sp),
-                        maxLines = 1)
-                }
-            }
             Spacer(modifier = Modifier.padding(4.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -719,7 +719,7 @@ fun SettingsScreen(
                     },
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("View Log")
+                    Text("查看日志")
                 }
                 Button(
                     onClick = attemptNavigateBack,
