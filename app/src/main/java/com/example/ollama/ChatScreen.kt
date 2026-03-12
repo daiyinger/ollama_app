@@ -99,6 +99,7 @@ fun ChatScreen(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var messageToDelete by remember { mutableStateOf<ChatMessage?>(null) }
     var showMenu by remember { mutableStateOf(false) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
 
     val density = LocalDensity.current
     val configuration = LocalConfiguration.current
@@ -124,6 +125,19 @@ fun ChatScreen(
         EnlargedImageDialog(
             imageUri = enlargedImageUri!!,
             onDismiss = { enlargedImageUri = null }
+        )
+    }
+
+    if (showSettingsDialog && activeProfile != null) {
+        ChatSettingsDialog(
+            profile = activeProfile!!,
+            onDismiss = { showSettingsDialog = false },
+            onSave = { temperature, topP, presencePenalty ->
+                if (conversationId != null) {
+                    viewModel.updateProfileParameters(conversationId, temperature, topP, presencePenalty)
+                }
+                showSettingsDialog = false
+            }
         )
     }
 
@@ -185,6 +199,12 @@ fun ChatScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { showSettingsDialog = true }) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Chat Settings"
+                        )
+                    }
                     IconButton(onClick = { showMenu = true }) {
                         Icon(
                             imageVector = Icons.Default.MoreVert,
@@ -1038,4 +1058,98 @@ fun ChatScreenPreview() {
             onNavigateUp = {}
         )
     }
+}
+
+@Composable
+fun ChatSettingsDialog(
+    profile: OllamaProfile,
+    onDismiss: () -> Unit,
+    onSave: (Float, Float, Float) -> Unit
+) {
+    // Use default values if profile parameters are null
+    var temperature by remember { mutableFloatStateOf(profile.temperature ?: 0.7f) }
+    var topP by remember { mutableFloatStateOf(profile.topP ?: 0.9f) }
+    var presencePenalty by remember { mutableFloatStateOf(profile.presencePenalty ?: 0.0f) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Chat Settings") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+            ) {
+                // Temperature Slider
+                Text(
+                    text = "Temperature: ${String.format(java.util.Locale.getDefault(), "%.2f", temperature)}",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Slider(
+                    value = temperature,
+                    onValueChange = { temperature = it },
+                    valueRange = 0f..2f,
+                    steps = 39,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    text = "Controls randomness. Higher values make output more random, lower values more deterministic.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+
+                // Top P Slider
+                Text(
+                    text = "Top P: ${String.format(java.util.Locale.getDefault(), "%.2f", topP)}",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Slider(
+                    value = topP,
+                    onValueChange = { topP = it },
+                    valueRange = 0f..1f,
+                    steps = 19,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    text = "Nucleus sampling. Controls diversity via top-p sampling.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+
+                // Presence Penalty Slider
+                Text(
+                    text = "Presence Penalty: ${String.format(java.util.Locale.getDefault(), "%.2f", presencePenalty)}",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Slider(
+                    value = presencePenalty,
+                    onValueChange = { presencePenalty = it },
+                    valueRange = -2f..2f,
+                    steps = 39,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    text = "Penalize new tokens based on their presence in the text so far.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onSave(temperature, topP, presencePenalty)
+                }
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }

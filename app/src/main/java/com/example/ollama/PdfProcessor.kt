@@ -156,7 +156,17 @@ class PdfProcessor(
                                     stream = false,
                                     images = listOf(imageBase64!!)
                                 )
-                                val response = ollamaApi.generateOllama(url = url, request = request.copy(options = mapOf("num_ctx" to profile.contextLength)))
+                                val response = ollamaApi.generateOllama(
+                                    url = url,
+                                    request = request.copy(
+                                        options = OllamaOptions(
+                                            num_ctx = profile.contextLength,
+                                            temperature = profile.temperature,
+                                            top_p = profile.topP,
+                                            presence_penalty = profile.presencePenalty
+                                        )
+                                    )
+                                )
                                 analysis = response.response
                             }
                             "OpenAI API 兼容" -> {

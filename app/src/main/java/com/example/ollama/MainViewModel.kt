@@ -253,6 +253,28 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    fun updateProfileParameters(conversationId: String, temperature: Float, topP: Float, presencePenalty: Float) {
+        val conversationIndex = _conversations.value.indexOfFirst { it.id == conversationId }
+        if (conversationIndex != -1) {
+            val conversation = _conversations.value[conversationIndex]
+            val profileName = conversation.profileName ?: activeProfile.value?.name ?: return
+            
+            // Update the profile in SettingsManager
+            val currentProfile = profiles.value.find { it.name == profileName } ?: return
+            val updatedProfile = currentProfile.copy(
+                temperature = temperature,
+                topP = topP,
+                presencePenalty = presencePenalty
+            )
+            settingsManager.updateProfile(updatedProfile)
+            
+            // If this is the active profile, also update the active profile
+            if (profileName == activeProfile.value?.name) {
+                setActiveProfile(profileName)
+            }
+        }
+    }
+
     fun setExpandedGroups(groups: Set<String>) {
         _expandedGroups.value = groups
         settingsManager.saveExpandedGroups(groups)
@@ -743,14 +765,33 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                             val systemPromptContent = conversation.systemPromptId?.let { id ->
                                 systemPrompts.value.find { it.id == id }?.content
                             }
+                            
+                            // Build options map dynamically - only include non-null parameters
+                            val ollamaOptionsMap: MutableMap<String, Any> = mutableMapOf("num_ctx" to profile.contextLength)
+                            if (profile.temperature != null) {
+                                ollamaOptionsMap["temperature"] = profile.temperature
+                            }
+                            if (profile.topP != null) {
+                                ollamaOptionsMap["top_p"] = profile.topP
+                            }
+                            if (profile.presencePenalty != null) {
+                                ollamaOptionsMap["presence_penalty"] = profile.presencePenalty
+                            }
+                            
                             val request = OllamaRequest(
                                 model = profile.model,
                                 prompt = finalPrompt,
                                 stream = true,
                                 images = imagesBase64,
-                                system = systemPromptContent
+                                system = systemPromptContent,
+                                options = OllamaOptions(
+                                    num_ctx = profile.contextLength,
+                                    temperature = profile.temperature,
+                                    top_p = profile.topP,
+                                    presence_penalty = profile.presencePenalty
+                                )
                             )
-                            val responseBody = ollamaApi.generateOllamaStream(url = url, request = request.copy(options = mapOf("num_ctx" to profile.contextLength)))
+                            val responseBody = ollamaApi.generateOllamaStream(url = url, request = request)
                             updateConversationInferenceStatus(conversationId, "Waiting for response...")
                             val responseStream = responseBody.byteStream().bufferedReader()
 
@@ -832,10 +873,13 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                                 model = profile.model,
                                 messages = messages,
                                 stream = true,
-                                stream_options = OpenAIStreamOptions(include_usage = true)
+                                stream_options = OpenAIStreamOptions(include_usage = true),
+                                temperature = profile.temperature,
+                                top_p = profile.topP,
+                                presence_penalty = profile.presencePenalty
                             )
                             updateConversationInferenceStatus(conversationId, "Sending...")
-                            val responseBody = ollamaApi.generateOpenAIStream(url = url, request = request.copy(max_tokens = profile.contextLength))
+                            val responseBody = ollamaApi.generateOpenAIStream(url = url, request = request)
                             updateConversationInferenceStatus(conversationId, "Waiting for response...")
                             val responseStream = responseBody.byteStream().bufferedReader()
 

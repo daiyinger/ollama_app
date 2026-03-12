@@ -25,7 +25,10 @@ data class OllamaProfile(
     val imageQuality: Int = 90,
     val pdfScale: Float = 2.0f,
     val contextLength: Int = 2048,
-    val pagePrompt: String = "The following image is a page from a document. Please identify the text on this page and return the recognized result."
+    val pagePrompt: String = "The following image is a page from a document. Please identify the text on this page and return the recognized result.",
+    val temperature: Float? = null,
+    val topP: Float? = null,
+    val presencePenalty: Float? = null
 )
 
 @Serializable

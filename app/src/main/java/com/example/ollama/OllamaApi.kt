@@ -30,8 +30,17 @@ data class OllamaRequest(
     val prompt: String,
     val stream: Boolean = false,
     val images: List<String>? = null,
-    val options: Map<String, Int>? = null,
+    val options: OllamaOptions? = null,
     val system: String? = null
+)
+
+/** Options for Ollama API requests */
+@Serializable
+data class OllamaOptions(
+    val num_ctx: Int? = null,
+    val temperature: Float? = null,
+    val top_p: Float? = null,
+    val presence_penalty: Float? = null
 )
 
 /** Response from the standard Ollama API */
@@ -82,7 +91,10 @@ data class OpenAIRequest(
     val messages: List<OpenAIRequestMessage>,
     val stream: Boolean = false,
     val max_tokens: Int? = null,
-    val stream_options: OpenAIStreamOptions? = null
+    val stream_options: OpenAIStreamOptions? = null,
+    val temperature: Float? = null,
+    val top_p: Float? = null,
+    val presence_penalty: Float? = null
 )
 
 @Serializable
