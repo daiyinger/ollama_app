@@ -112,6 +112,7 @@ fun SettingsScreen(
     var pdfScale by remember(selectedProfile) { mutableStateOf(selectedProfile.pdfScale) }
     var contextLength by remember(selectedProfile) { mutableStateOf(selectedProfile.contextLength) }
     val enableSessionLogging by viewModel.enableSessionLogging.collectAsState()
+    val enableAutoTitleGeneration by viewModel.enableAutoTitleGeneration.collectAsState()
 
     var passwordVisible by remember { mutableStateOf(false) }
     var isApiModeExpanded by remember { mutableStateOf(false) }
@@ -732,6 +733,17 @@ fun SettingsScreen(
                     Switch(
                         checked = enableSessionLogging,
                         onCheckedChange = { viewModel.setEnableSessionLogging(it) }
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(text = "自动生成标题")
+                    Switch(
+                        checked = enableAutoTitleGeneration,
+                        onCheckedChange = { viewModel.setEnableAutoTitleGeneration(it) }
                     )
                 }
                 

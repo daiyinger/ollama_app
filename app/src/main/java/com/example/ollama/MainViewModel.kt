@@ -118,6 +118,9 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
     private val _enableSessionLogging = MutableStateFlow(false)
     val enableSessionLogging: StateFlow<Boolean> = _enableSessionLogging.asStateFlow()
 
+    private val _enableAutoTitleGeneration = MutableStateFlow(false)
+    val enableAutoTitleGeneration: StateFlow<Boolean> = _enableAutoTitleGeneration.asStateFlow()
+
     private val _expandedGroups = MutableStateFlow(setOf<String>())
     val expandedGroups: StateFlow<Set<String>> = _expandedGroups.asStateFlow()
 
@@ -137,6 +140,7 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
     init {
         requestLoggingInterceptor = RequestLoggingInterceptor(application)
         _enableSessionLogging.value = settingsManager.getEnableSessionLogging()
+        _enableAutoTitleGeneration.value = settingsManager.getEnableAutoTitleGeneration()
         _expandedGroups.value = settingsManager.getExpandedGroups()
         _expandedDays.value = settingsManager.getExpandedDays()
         viewModelScope.launch {
@@ -233,7 +237,11 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun setEnableSessionLogging(enabled: Boolean) {
         settingsManager.setEnableSessionLogging(enabled)
-        _enableSessionLogging.value = enabled
+    }
+
+    fun setEnableAutoTitleGeneration(enabled: Boolean) {
+        _enableAutoTitleGeneration.value = enabled
+        settingsManager.setEnableAutoTitleGeneration(enabled)
     }
 
     fun addSystemPrompt(systemPrompt: SystemPrompt) {
@@ -1059,7 +1067,9 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                     // Auto-generate title for new conversations
                     val currentConversation = _conversations.value.find { it.id == conversationId }
-                    if (currentConversation != null && currentConversation.title.startsWith("Chat ") && currentConversation.messages.size > 1) {
+                    if (_enableAutoTitleGeneration.value && currentConversation != null && currentConversation.title.startsWith("Chat ") && currentConversation.messages.size > 1) {
+                        // 等待1秒后再生成标题
+                        delay(1000)
                         generateConversationTitle(conversationId)
                     }
 
@@ -1159,25 +1169,37 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
             val conversation = _conversations.value.find { it.id == conversationId } ?: return@launch
             val userPrompt = conversation.messages.firstOrNull()?.content ?: return@launch
 
+            // 如果内容很短（小于20个字符），直接作为标题
+            if (userPrompt.length < 20) {
+                val title = userPrompt.trim()
+                withContext(Dispatchers.Main) {
+                    updateConversationTitle(conversationId, title)
+                }
+                return@launch
+            }
+
             try {
                 val profile = activeProfile.value ?: return@launch
                 val url = profile.apiHost.removeSuffix("/") + "/" + profile.apiPath.removePrefix("/")
-                val titlePrompt = "Summarize the following text in 5 words or less: \"$userPrompt\""
+                // 优化提示词，让模型快速生成标题
+                val titlePrompt = "Quickly generate a short title (5 words or less) for: \"$userPrompt\". If you can't, return: Cannot summarize. Be fast, don't overthink."
 
                 when (profile.apiMode) {
                     "Ollama" -> {
                         val request = OllamaRequest(model = profile.model, prompt = titlePrompt, stream = false)
                         val response = ollamaApi.generateOllama(url = url, request = request)
+                        val title = response.response.trim().replace("\"", "").ifBlank { "Untitled" }
                         withContext(Dispatchers.Main) {
-                            updateConversationTitle(conversationId, response.response.trim().replace("\"", ""))
+                            updateConversationTitle(conversationId, title)
                         }
                     }
                     "OpenAI API 兼容" -> {
                         val messages = listOf(OpenAIRequestMessage(role = "user", content = listOf(OpenAITextContent(text = titlePrompt))))
-                        val request = OpenAIRequest(model = profile.model, messages = messages, stream = true)
+                        val request = OpenAIRequest(model = profile.model, messages = messages, stream = false)
                         val responseBody = ollamaApi.generateOpenAIStream(url = url, request = request)
                         val responseStream = responseBody.byteStream().bufferedReader()
                         val titleBuilder = StringBuilder()
+
                         responseStream.use {
                             var line: String?
                             while (true) {

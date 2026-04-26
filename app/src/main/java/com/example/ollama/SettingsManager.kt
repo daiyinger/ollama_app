@@ -43,6 +43,7 @@ data class AppSettings(
     val profiles: List<OllamaProfile>,
     val activeProfileName: String?,
     val enableSessionLogging: Boolean,
+    val enableAutoTitleGeneration: Boolean = false,
     val systemPrompts: List<SystemPrompt> = emptyList(),
     val conversations: List<Conversation> = emptyList()
 )
@@ -59,6 +60,7 @@ class SettingsManager(context: Context) {
         const val KEY_EXPANDED_GROUPS = "expanded_groups"
         const val KEY_EXPANDED_DAYS = "expanded_days"
         const val KEY_SYSTEM_PROMPTS = "system_prompts"
+        const val KEY_ENABLE_AUTO_TITLE_GENERATION = "enable_auto_title_generation"
 
         val defaultProfile = OllamaProfile(
             name = "Default",
@@ -185,6 +187,14 @@ class SettingsManager(context: Context) {
         return prefs.getBoolean(KEY_ENABLE_SESSION_LOGGING, true)
     }
 
+    fun setEnableAutoTitleGeneration(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_ENABLE_AUTO_TITLE_GENERATION, enabled).apply()
+    }
+
+    fun getEnableAutoTitleGeneration(): Boolean {
+        return prefs.getBoolean(KEY_ENABLE_AUTO_TITLE_GENERATION, false)
+    }
+
     fun getSystemPrompts(): List<SystemPrompt> {
         val jsonString = prefs.getString(KEY_SYSTEM_PROMPTS, null)
         return if (jsonString != null) {
@@ -268,6 +278,7 @@ class SettingsManager(context: Context) {
             profiles = profiles,
             activeProfileName = activeProfileName,
             enableSessionLogging = enableSessionLogging,
+            enableAutoTitleGeneration = getEnableAutoTitleGeneration(),
             systemPrompts = getSystemPrompts(),
             conversations = conversations
         )
@@ -280,6 +291,7 @@ class SettingsManager(context: Context) {
             saveProfiles(appSettings.profiles)
             setActiveProfile(appSettings.activeProfileName)
             setEnableSessionLogging(appSettings.enableSessionLogging)
+            setEnableAutoTitleGeneration(appSettings.enableAutoTitleGeneration)
             saveSystemPrompts(appSettings.systemPrompts)
 
             // Only update conversations if they are present in the import data
