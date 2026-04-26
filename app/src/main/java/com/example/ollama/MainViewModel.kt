@@ -52,7 +52,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
-data class RunningModelDisplayInfo(val name: String, val expirationTime: String)
+data class RunningModelDisplayInfo(val name: String, val expirationTime: String, val parameterSize: String, val contextLength: String)
 data class LogFileInfo(val file: File, val size: Long)
 data class CopiedFile(val uri: Uri, val fileName: String)
 
@@ -1262,7 +1262,9 @@ open class MainViewModel(application: Application) : AndroidViewModel(applicatio
                             "Invalid Date"
                         }
                     } ?: "N/A"
-                    RunningModelDisplayInfo(name = model.name, expirationTime = expirationTime)
+                    val parameterSize = model.details.parameterSize
+                    val contextLength = model.contextLength?.toString() ?: "N/A"
+                    RunningModelDisplayInfo(name = model.name, expirationTime = expirationTime, parameterSize = parameterSize, contextLength = contextLength)
                 }
 
                 withContext(Dispatchers.Main) {
